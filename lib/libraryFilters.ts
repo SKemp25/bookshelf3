@@ -18,6 +18,7 @@ const TITLE_SUMMARY_PATTERNS: RegExp[] = [
   /\bspark\s*notes?\b/i,
   /\bcliffs?\s*notes?\b/i,
   /\bstudy\s+guide\b/i,
+  /\bstudy\s+notes\b/i,
   /\brevision\s+notes?\b/i,
   /\bexam\s+notes?\b/i,
   /\bbook\s+notes\b/i,
@@ -33,6 +34,14 @@ const TITLE_SUMMARY_PATTERNS: RegExp[] = [
   /\bthe\s+essentials?\s+of\b/i,
   /\byoung\s+readers?\s+edition\b/i,
   /\bchildren'?s\s+edition\b/i,
+]
+
+const SUBTITLE_SUMMARY_PATTERNS: RegExp[] = [
+  /^notes$/i,
+  /\bstudy\s+notes\b/i,
+  /\bcliffs?\s*notes?\b/i,
+  /\bspark\s*notes?\b/i,
+  /\bstudy\s+guide\b/i,
 ]
 
 const DESCRIPTION_SUMMARY_PATTERNS: RegExp[] = [
@@ -210,6 +219,7 @@ export function isSummarizedOrStudyGuide(book: LibraryBookLike): boolean {
   const identity = editionIdentityText(book)
   const description = asText(book.description).toLowerCase()
   const publisher = asText(book.publisher).toLowerCase()
+  const subtitle = asText(book.subtitle)
 
   if (SUMMARY_PUBLISHERS.some((name) => publisher.includes(name) || identity.includes(name))) {
     return true
@@ -217,9 +227,23 @@ export function isSummarizedOrStudyGuide(book: LibraryBookLike): boolean {
   if (TITLE_SUMMARY_PATTERNS.some((pattern) => pattern.test(identity))) {
     return true
   }
+  if (SUBTITLE_SUMMARY_PATTERNS.some((pattern) => pattern.test(subtitle))) {
+    return true
+  }
   if (DESCRIPTION_SUMMARY_PATTERNS.some((pattern) => pattern.test(description))) {
     return true
   }
+  return false
+}
+
+export function isCollectedEdition(book: LibraryBookLike): boolean {
+  const title = asText(book.title)
+  const subtitle = asText(book.subtitle)
+  const identity = `${title} ${subtitle}`
+  if (/\s\/\s/.test(identity)) return true
+  if (/\bomnibus\b/i.test(identity)) return true
+  if (/\b(box|boxed)\s+set\b/i.test(identity)) return true
+  if (/\bcomplete\s+(trilogy|series|collection|quartet)\b/i.test(identity)) return true
   return false
 }
 
@@ -309,6 +333,7 @@ export function isRerelease(book: LibraryBookLike): boolean {
 export function isAllowedLibraryBook(book: LibraryBookLike): boolean {
   if (!isEnglishLanguage(book.language)) return false
   if (isSummarizedOrStudyGuide(book)) return false
+  if (isCollectedEdition(book)) return false
   if (isSpecialEdition(book)) return false
   if (isRerelease(book)) return false
   if (isPromotionalCopy(book)) return false

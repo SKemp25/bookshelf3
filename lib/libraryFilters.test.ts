@@ -35,7 +35,8 @@ describe("summarized and study-guide editions", () => {
     assert.equal(isSummarizedOrStudyGuide({ title: "Circe: A Summary" }), true)
     assert.equal(isSummarizedOrStudyGuide({ title: "The Odyssey", subtitle: "SparkNotes Study Guide" }), true)
     assert.equal(isSummarizedOrStudyGuide({ title: "Pride and Prejudice", subtitle: "Cliffs Notes" }), true)
-    assert.equal(isSummarizedOrStudyGuide({ title: "Hamlet", publisher: "SparkNotes" }), true)
+    assert.equal(isSummarizedOrStudyGuide({ title: "Pride and Prejudice", subtitle: "Notes" }), true)
+    assert.equal(isSummarizedOrStudyGuide({ title: "Pride and prejudice", subtitle: "notes" }), true)
     assert.equal(
       isSummarizedOrStudyGuide({
         title: "The Great Gatsby",
@@ -84,6 +85,23 @@ describe("original editions vs reissues", () => {
 })
 
 describe("filterLibraryBooks", () => {
+  it("rejects omnibus collections of multiple original books", () => {
+    assert.equal(
+      isAllowedLibraryBook({
+        title: "The Hunger Games / Catching Fire / Mockingjay",
+        language: "en",
+      }),
+      false,
+    )
+    assert.equal(
+      isAllowedLibraryBook({
+        title: "The Hunger Games Trilogy (Hunger Games / Catching Fire / Mockingjay)",
+        language: "eng",
+      }),
+      false,
+    )
+  })
+
   it("keeps English original editions only", () => {
     const kept = filterLibraryBooks([
       { title: "Klara and the Sun", language: "en" },
