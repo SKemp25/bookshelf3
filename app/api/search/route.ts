@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { filterLibraryBooks, isEnglishLanguage, normalizeLanguageCode } from "@/lib/libraryFilters"
 
+// Backup lookups fetch details book by book, which can take longer than the default limit
+export const maxDuration = 60
+
 type NormalizedBook = {
   id: string
   title: string
@@ -204,6 +207,47 @@ async function searchGoogleByAuthor(author: string, maxResults: number): Promise
   return merged.filter((book) => isByAuthor(book, author))
 }
 
+function titleKey(title: string): string {
+  return title
+    .toLowerCase()
+    .split(":")[0]
+    .replace(/['\u2019]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/^(the|a|an) /, "")
+}
+
+// When Google's author search fails, Open Library still lists the author's books
+// but without descriptions. Google answers a plain "title author" query reliably,
+// so fill each book's missing details from that.
+async function fillFromGoogle(book: NormalizedBook): Promise<void> {
+  try {
+    const found = await fetchGoogleOnce(`${book.title} ${book.author}`, 5, "relevance")
+    const match = (found || []).find(
+      (candidate) => titleKey(candidate.title) === titleKey(book.title) && isByAuthor(candidate, book.author),
+    )
+    if (!match) return
+    if (!book.description) book.description = match.description
+    if (!book.thumbnail) book.thumbnail = match.thumbnail
+    if (!book.isbn) book.isbn = match.isbn
+    if (!book.publisher) book.publisher = match.publisher
+    if (book.categories.length === 0) book.categories = match.categories
+    // Open Library's first-publication year is usually right; take Google's full date when it is the same year
+    if (parseInt(match.publishedDate, 10) === parseInt(book.publishedDate, 10)) {
+      book.publishedDate = match.publishedDate
+    }
+  } catch {
+    // details are optional
+  }
+}
+
+// A few at a time, so Google does not refuse a burst of requests
+async function fillAllFromGoogle(books: NormalizedBook[]): Promise<void> {
+  for (let i = 0; i < books.length; i += 8) {
+    await Promise.all(books.slice(i, i + 8).map(fillFromGoogle))
+  }
+}
+
 // Open Library search results carry no description; the work record does.
 async function fetchOpenLibraryDescription(workKey: string): Promise<string> {
   if (!workKey.startsWith("/works/")) return ""
@@ -284,12 +328,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([], { status: 200 })
     }
     const data = await resp.json()
+    // Open Library's author search also matches other people ("Daniel Gregory Mason" for "Daniel Mason")
+    let olBooks = mapOpenLibraryDocs(data?.docs)
+    if (author) olBooks = olBooks.filter((book) => isByAuthor(book, author))
+    // Open Library often lists the same book several times; keep the earliest so the
+    // card shows the first publication and the lookups below are not wasted
+    const firstYear = (b: NormalizedBook) => parseInt(b.publishedDate, 10) || 9999
+    olBooks.sort((a, b) => firstYear(a) - firstYear(b))
+    const seenTitles = new Set<string>()
+    olBooks = olBooks.filter((book) => {
+      const key = titleKey(book.title)
+      if (seenTitles.has(key)) return false
+      seenTitles.add(key)
+      return true
+    })
     // Newest first before trimming, so recent books are not cut off the list
-    const books = newestFirst(filterLibraryBooks(mapOpenLibraryDocs(data?.docs))).slice(0, maxResults)
+    const books = newestFirst(filterLibraryBooks(olBooks)).slice(0, maxResults)
+    await fillAllFromGoogle(books)
+    const missing = books.filter((book) => !book.description)
     const descriptions = await Promise.all(
-      books.map((book) => fetchOpenLibraryDescription(book.id.replace(/^OL/, ""))),
+      missing.map((book) => fetchOpenLibraryDescription(book.id.replace(/^OL/, ""))),
     )
-    books.forEach((book, i) => {
+    missing.forEach((book, i) => {
       book.description = descriptions[i]
     })
     return NextResponse.json(books, { status: 200 })
