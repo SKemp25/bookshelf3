@@ -16,7 +16,7 @@ import type { Book, User as UserType, Platform, AdvancedFilterState } from "@/li
 import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics"
 import { normalizeAuthorName } from "./AuthorManager"
 import { saveUserAuthors } from "@/lib/database"
-import { deduplicateBooks, isAllowedLibraryBook } from "@/lib/utils"
+import { deduplicateBooks, isAllowedLibraryBook, remapMergedBookIds } from "@/lib/utils"
 import DataExport from "./DataExport"
 import { APIErrorBoundary, ComponentErrorBoundary } from "./ErrorBoundary"
 import { Card, CardContent } from "@/components/ui/card"
@@ -400,11 +400,38 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
     diagnosedWithMemoryIssues: false,
   })
 
+  // When editions of a book merge into one card, carry the reader's marks over to it
+  useEffect(() => {
+    if (!books.length) return
+    const remapSet = (prev: Set<string>) => {
+      const asMap = new Map(Array.from(prev, (id) => [id, true] as [string, boolean]))
+      const remapped = remapMergedBookIds(asMap, books)
+      return remapped === asMap ? prev : new Set(remapped.keys())
+    }
+    setReadBooks(remapSet)
+    setWantToReadBooks(remapSet)
+    setDontWantBooks(remapSet)
+    setBookRatings((prev) => remapMergedBookIds(prev, books))
+  }, [books])
+
   // Fetch books for all existing authors when component loads
   useEffect(() => {
     const fetchBooksForAuthors = async () => {
-      if (!isDataLoaded || !authors.length || books.length > 0) {
+      if (!isDataLoaded || !authors.length) {
         return
+      }
+      // A saved shelf keeps its books, but is refreshed once a day so new
+      // releases appear and older entries pick up missing descriptions and covers
+      const refreshKey = `bookshelf_last_refresh_${currentUser}`
+      const isRefresh = books.length > 0
+      if (isRefresh) {
+        try {
+          const lastRefresh = Number(localStorage.getItem(refreshKey) || 0)
+          if (Date.now() - lastRefresh < 24 * 60 * 60 * 1000) return
+          localStorage.setItem(refreshKey, String(Date.now()))
+        } catch {
+          return
+        }
       }
       try {
         const { fetchAuthorBooksWithCache } = await import("@/lib/apiCache")
@@ -498,8 +525,11 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
           }
         }
         if (allBooks.length > 0) {
-          const deduplicatedBooks = deduplicateBooks(allBooks, userState.country || "US")
-          setBooks(deduplicatedBooks)
+          if (isRefresh) {
+            setBooks((prev) => deduplicateBooks([...prev, ...allBooks], userState.country || "US"))
+          } else {
+            setBooks(deduplicateBooks(allBooks, userState.country || "US"))
+          }
           
           const endTime = performance.now()
           const duration = endTime - startTime
