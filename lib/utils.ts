@@ -124,6 +124,8 @@ export function deduplicateBooks(books: any[], userCountry: string = "US") {
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase()
+      // Ignore a leading article so "Future" and "The Future" group together
+      .replace(/^(the|a|an) /, "")
     
     const author = (book.authors?.[0] || book.author || "unknown").toLowerCase().trim()
     // Don't include publication year in key - we want to group all editions together
@@ -262,8 +264,15 @@ export function deduplicateBooks(books: any[], userCountry: string = "US") {
       return 0
     })
 
-    // Take the best book (first in sorted array)
-    result.push(sortedBooks[0])
+    // Take the best book (first in sorted array), filling any missing
+    // description, cover or page count from the other copies of the same book
+    const best = { ...sortedBooks[0] }
+    for (const other of sortedBooks.slice(1)) {
+      if (!best.description && other.description) best.description = other.description
+      if (!best.thumbnail && other.thumbnail) best.thumbnail = other.thumbnail
+      if (!best.pageCount && other.pageCount) best.pageCount = other.pageCount
+    }
+    result.push(best)
   })
 
   return result

@@ -473,6 +473,13 @@ export default function BookGrid({
     }
   }
 
+  // Show the publication year; full dates from the data sources are often a
+  // placeholder Jan 1 and add little for the reader
+  const formatPublishedDate = (publishedDate: string) => {
+    const match = publishedDate.trim().match(/^(\d{4})/)
+    return match ? match[1] : publishedDate
+  }
+
   const formatUpcomingDate = (publishedDate: string) => {
     if (!publishedDate) return ""
     const date = new Date(publishedDate)
@@ -649,7 +656,7 @@ export default function BookGrid({
                     </div>
                   </td>
                   <td className="p-2">
-                    <div className="text-xs text-gray-600 whitespace-nowrap">{book.publishedDate || "-"}</div>
+                    <div className="text-xs text-gray-600 whitespace-nowrap">{book.publishedDate ? formatPublishedDate(book.publishedDate) : "-"}</div>
                   </td>
                   <td className="p-2">
                     <div className="text-xs text-gray-600 whitespace-nowrap">{book.pageCount && book.pageCount > 0 ? `${book.pageCount}` : "-"}</div>
@@ -746,7 +753,7 @@ export default function BookGrid({
                     <div className="flex flex-wrap items-center gap-2 text-xs text-gray-700">
                       {book.publishedDate && (
                         <span className="font-medium">
-                          {isUpcoming ? formatUpcomingDate(book.publishedDate) : book.publishedDate}
+                          {isUpcoming ? formatUpcomingDate(book.publishedDate) : formatPublishedDate(book.publishedDate)}
                         </span>
                       )}
                       {book.pageCount && book.pageCount > 0 && (
@@ -975,7 +982,7 @@ export default function BookGrid({
                             }`}
                           />
                           <span className="font-bold">
-                            {isUpcoming ? formatUpcomingDate(book.publishedDate) : book.publishedDate}
+                            {isUpcoming ? formatUpcomingDate(book.publishedDate) : formatPublishedDate(book.publishedDate)}
                           </span>
                           {isUpcoming && (
                             <span className="text-xs text-emerald-600 ml-1 font-black">• COMING SOON</span>
