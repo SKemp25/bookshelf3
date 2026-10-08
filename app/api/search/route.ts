@@ -129,7 +129,11 @@ function newestFirst(books: NormalizedBook[]): NormalizedBook[] {
   return [...books].sort((a, b) => year(b) - year(a))
 }
 
-async function fetchGoogle(query: string, maxResults: number, orderBy: "relevance" | "newest"): Promise<NormalizedBook[] | null> {
+async function fetchGoogleOnce(
+  query: string,
+  maxResults: number,
+  orderBy: "relevance" | "newest",
+): Promise<NormalizedBook[] | null> {
   const googleUrl = new URL("https://www.googleapis.com/books/v1/volumes")
   googleUrl.searchParams.set("q", query)
   googleUrl.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 40)))
@@ -141,10 +145,61 @@ async function fetchGoogle(query: string, maxResults: number, orderBy: "relevanc
   const apiKey = process.env.GOOGLE_BOOKS_API_KEY
   if (apiKey) googleUrl.searchParams.set("key", apiKey)
 
-  const resp = await fetch(googleUrl.toString(), { cache: "no-store" })
+  const resp = await fetch(googleUrl.toString(), { cache: "no-store", signal: AbortSignal.timeout(8000) })
   if (!resp.ok) return null
   const data = await resp.json()
   return mapGoogleItems(data?.items)
+}
+
+// Google Books answers intermittently, so give each query one retry
+async function fetchGoogle(
+  query: string,
+  maxResults: number,
+  orderBy: "relevance" | "newest",
+): Promise<NormalizedBook[] | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const books = await fetchGoogleOnce(query, maxResults, orderBy)
+      if (books && books.length > 0) return books
+      if (books && attempt === 1) return books
+    } catch {
+      // timeout or network error: retry once
+    }
+  }
+  return null
+}
+
+function nameWords(name: string): string[] {
+  return name
+    .toLowerCase()
+    .replace(/[,.]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+}
+
+// True when one of the book's authors has the same words as the searched name
+// ("Kate Atkinson" matches "Atkinson, Kate" but not "Robert Atkinson")
+function isByAuthor(book: { authors: string[]; author: string }, searched: string): boolean {
+  const target = nameWords(searched).join(" ")
+  const names = book.authors.length > 0 ? book.authors : [book.author]
+  return names.some((name) => nameWords(name).join(" ") === target)
+}
+
+// Google often returns nothing for a query made only of field filters such as
+// inauthor:"Kate Atkinson", so ask in several forms and keep the author's books
+async function searchGoogleByAuthor(author: string, maxResults: number): Promise<NormalizedBook[] | null> {
+  const lastName = author.trim().split(/\s+/).pop() || author
+  const queries: Array<[string, "relevance" | "newest"]> = [
+    [author, "relevance"],
+    [`${author} inauthor:${lastName}`, "relevance"],
+    [`inauthor:"${author}"`, "relevance"],
+    [author, "newest"],
+  ]
+  const results = await Promise.all(queries.map(([query, orderBy]) => fetchGoogle(query, maxResults, orderBy)))
+  if (results.every((list) => list === null)) return null
+  const merged = mergeById(...results.map((list) => list || []))
+  return merged.filter((book) => isByAuthor(book, author))
 }
 
 // Open Library search results carry no description; the work record does.
@@ -187,15 +242,21 @@ export async function GET(request: NextRequest) {
 
   // 1) Try Google Books first (fast + rich metadata)
   try {
-    const relevant = await fetchGoogle(googleQuery, maxResults * 2, "relevance")
-    if (relevant) {
-      // Relevance ranking buries new releases behind older editions, so for
-      // author lookups also ask for the newest titles and merge them in.
-      const newest = author && !title && !q ? (await fetchGoogle(googleQuery, 20, "newest")) || [] : []
-      const books = mergeById(
-        filterLibraryBooks(relevant).slice(0, maxResults),
-        filterLibraryBooks(newest).slice(0, 10),
-      )
+    if (author && !title && !q) {
+      // Relevance and newest-first are both asked for, so new releases are not buried
+      const byAuthor = await searchGoogleByAuthor(author, 40)
+      const books = newestFirst(filterLibraryBooks(byAuthor || [])).slice(0, maxResults)
+      if (books.length > 0) return NextResponse.json(books)
+    } else {
+      // A plain-words query first: Google often returns nothing for filter-only queries
+      const plain = [q, title, author].filter(Boolean).join(" ")
+      const [relevant, filtered] = await Promise.all([
+        fetchGoogle(plain, maxResults * 2, "relevance"),
+        googleQuery !== plain ? fetchGoogle(googleQuery, maxResults * 2, "relevance") : Promise.resolve(null),
+      ])
+      let found = mergeById(filtered || [], relevant || [])
+      if (author) found = found.filter((book) => isByAuthor(book, author))
+      const books = filterLibraryBooks(found).slice(0, maxResults)
       if (books.length > 0) return NextResponse.json(books)
     }
 
