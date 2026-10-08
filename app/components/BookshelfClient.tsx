@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import AccountManager from "./AccountManager"
 import AuthorManager from "./AuthorManager"
 import BookGrid from "./BookGrid"
@@ -9,6 +9,7 @@ import AdvancedFilters from "./AdvancedFilters"
 import { defaultAdvancedFilters } from "@/lib/types"
 import BookRecommendations from "./BookRecommendations"
 import TooltipManager from "./TooltipManager"
+import OnboardingTour from "./OnboardingTour"
 import { logError } from "./ErrorLogger"
 import { ChevronDown, ChevronUp, Users, BookOpen, Settings, HelpCircle, Search, Grid3x3, List, ArrowUpDown, Filter, User, Download, LogOut, LogIn, X, Menu, Heart, BookmarkPlus, BookCheck, BookX, FileText } from "lucide-react"
 import type { Book, User as UserType, Platform, AdvancedFilterState } from "@/lib/types"
@@ -679,26 +680,12 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
     loadUserData()
   }, [isLoggedIn, currentUser])
 
-  // Check for new user and trigger onboarding tour after data is loaded
-  useEffect(() => {
-    if (!isLoggedIn || !currentUser || !isDataLoaded) return
-
-    const userDataKey = `bookshelf_data_${currentUser}`
-    const savedData = localStorage.getItem(userDataKey)
-    const isNewUser = !savedData || savedData === "{}"
-    
-    // Check if user has seen onboarding tour
-    const onboardingSeenKey = `bookshelf_onboarding_seen_${currentUser}`
-    const hasSeenOnboarding = localStorage.getItem(onboardingSeenKey) === "true"
-    
-    // Show onboarding tour for new users who haven't seen it
-    if (isNewUser && !hasSeenOnboarding) {
-      // Small delay to ensure UI is fully rendered
-      setTimeout(() => {
-        setIsOnboardingTourActive(true)
-      }, 1500)
+  const handleOnboardingTourComplete = useCallback(() => {
+    setIsOnboardingTourActive(false)
+    if (currentUser) {
+      localStorage.setItem(`bookshelf_onboarding_seen_${currentUser}`, "true")
     }
-  }, [isLoggedIn, currentUser, isDataLoaded])
+  }, [currentUser])
 
   useEffect(() => {
     if (!isLoggedIn || !isDataLoaded || !currentUser) return
@@ -1458,7 +1445,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
             {/* View Dropdown - Hide on mobile */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="hidden md:flex gap-2 text-white hover:bg-white/20 p-2">
+                <Button variant="ghost" size="sm" className="hidden md:flex gap-2 text-white hover:bg-white/20 p-2" data-onboarding="view-modes">
                   {viewMode === "grid" && <Grid3x3 className="w-4 h-4" />}
                   {viewMode === "list" && <List className="w-4 h-4" />}
                   <ChevronDown className="w-3 h-3" />
@@ -1843,6 +1830,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
             size="sm" 
             className="flex flex-col items-center gap-1 h-auto py-2 hover:bg-white/20"
             onClick={() => setShowSettingsDialog(true)}
+            data-onboarding="settings"
             style={{ color: 'white' }}
             onMouseEnter={(e) => {
               e.currentTarget.style.color = 'white'
@@ -3309,6 +3297,9 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
           />
         </div>
       )}
+
+      {/* Guided onboarding tour (started from Settings > Start Onboarding Tour) */}
+      <OnboardingTour isActive={isOnboardingTourActive} onComplete={handleOnboardingTourComplete} />
 
       {/* Contextual Tooltip Tour */}
       <TooltipManager
