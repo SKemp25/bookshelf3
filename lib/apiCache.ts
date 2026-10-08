@@ -178,9 +178,14 @@ export async function fetchAuthorBooksWithCache(authorName: string, clearCache: 
 
   console.log(`Cache miss for author: ${authorName}, fetching via /api/search (server-side fallback enabled)`)
 
+  const AUTHOR_SEARCH_TIMEOUT_MS = 15_000
+
   try {
-    const url = `/api/search?author=${encodeURIComponent(authorName)}&maxResults=25&lang=en`
-    const response = await fetch(url, { cache: "no-store" })
+    const url = `/api/search?author=${encodeURIComponent(authorName)}&maxResults=40&lang=en`
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), AUTHOR_SEARCH_TIMEOUT_MS)
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal })
+    clearTimeout(timeoutId)
     if (!response.ok) {
       apiCache.set(cacheKey, [], 2 * 60 * 1000)
       return []
@@ -190,7 +195,11 @@ export async function fetchAuthorBooksWithCache(authorName: string, clearCache: 
     apiCache.set(cacheKey, Array.isArray(books) ? books : [], (Array.isArray(books) && books.length > 0) ? 10 * 60 * 1000 : 2 * 60 * 1000)
     return Array.isArray(books) ? books : []
   } catch (error) {
-    console.error("Error fetching author books via /api/search:", error)
+    if ((error as Error)?.name === "AbortError") {
+      console.warn(`Author search timed out after ${AUTHOR_SEARCH_TIMEOUT_MS / 1000}s: ${authorName}`)
+    } else {
+      console.error("Error fetching author books via /api/search:", error)
+    }
     apiCache.set(cacheKey, [], 2 * 60 * 1000)
     return []
   }

@@ -41,6 +41,8 @@ export function normalizeTitleForGrouping(title: string): string {
     // Remove edition indicators from title
     .replace(/\s*\(.*edition.*\)/gi, "")
     .replace(/\s*\[.*edition.*\]/gi, "")
+    // Collapse apostrophes so "DON'T" and "DONT" group together
+    .replace(/['\u2019]/g, "")
     // Normalize punctuation and whitespace
     .replace(/[^\w\s]/g, " ")
     .replace(/\s+/g, " ")
@@ -229,7 +231,7 @@ export function deduplicateBooks(books: any[], userCountry: string = "US") {
         return dateA.getTime() - dateB.getTime()
       }
 
-      // Priority 2: Prefer original publishers over reprints
+      // Priority 3: Prefer original publishers over reprints
       const publisherA = a.publisher?.toLowerCase() || ""
       const publisherB = b.publisher?.toLowerCase() || ""
 
@@ -273,7 +275,7 @@ export function deduplicateBooks(books: any[], userCountry: string = "US") {
       if (isOriginalA && !isOriginalB) return -1
       if (!isOriginalA && isOriginalB) return 1
 
-      // Priority 3: Prefer books without special edition indicators (already filtered above, but double-check)
+      // Priority 4: Prefer books without special edition indicators (already filtered above, but double-check)
       const specialIndicators = ["edition", "reprint", "reissue", "anniversary", "special", "collector", "deluxe", "premium", "limited", "commemorative"]
       const hasSpecialA = specialIndicators.some(
         (indicator) => a.title?.toLowerCase().includes(indicator) || a.description?.toLowerCase().includes(indicator),
@@ -285,9 +287,9 @@ export function deduplicateBooks(books: any[], userCountry: string = "US") {
       if (hasSpecialA && !hasSpecialB) return 1
       if (!hasSpecialA && hasSpecialB) return -1
 
-      // Priority 4: Prefer books with more complete information (including ISBN)
-      const completenessA = (a.description ? 1 : 0) + (a.pageCount ? 1 : 0) + (a.thumbnail ? 1 : 0) + (a.isbn ? 1 : 0)
-      const completenessB = (b.description ? 1 : 0) + (b.pageCount ? 1 : 0) + (b.thumbnail ? 1 : 0) + (b.isbn ? 1 : 0)
+      // Priority 5: Prefer books with more complete information (description weighted higher than thumbnail)
+      const completenessA = (a.description ? 2 : 0) + (a.pageCount ? 1 : 0) + (a.thumbnail ? 1 : 0) + (a.isbn ? 1 : 0)
+      const completenessB = (b.description ? 2 : 0) + (b.pageCount ? 1 : 0) + (b.thumbnail ? 1 : 0) + (b.isbn ? 1 : 0)
 
       if (completenessA !== completenessB) {
         return completenessB - completenessA

@@ -16,7 +16,8 @@ import type { Book, User as UserType, Platform, AdvancedFilterState } from "@/li
 import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics"
 import { normalizeAuthorName } from "./AuthorManager"
 import { saveUserAuthors } from "@/lib/database"
-import { deduplicateBooks, isAllowedLibraryBook, remapMergedBookIds } from "@/lib/utils"
+import { deduplicateBooks, isAllowedLibraryBook, isSpecialEdition, remapMergedBookIds } from "@/lib/utils"
+import { fetchAuthorBooksWithCache } from "@/lib/apiCache"
 import DataExport from "./DataExport"
 import { APIErrorBoundary, ComponentErrorBoundary } from "./ErrorBoundary"
 import { Card, CardContent } from "@/components/ui/card"
@@ -453,7 +454,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                 return normalizeAuthorName(bookAuthor).toLowerCase() === normalizeAuthorName(author).toLowerCase()
               })
               
-              // Validate books against existing books if we have any
+              // Validate books: author match only. Support both API format (author, categories) and volumeInfo format.
               const validatedBooks = authorBooks.filter((item: any) => {
                 const apiAuthor = item.volumeInfo?.authors?.[0] || item.author || ""
                 if (!apiAuthor) return false
@@ -466,50 +467,29 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                   return false
                 }
                 
-                // If we have existing books by this author, use them as reference
+                // If we have existing books by this author, only exclude when categories clearly say non-fiction.
+                // Don't use description alone (e.g. "historical" in description would hide historical fiction like The Women).
                 if (existingBooksByAuthor.length > 0) {
-                  // Check if this book's metadata is consistent with existing books
-                  // Look at categories/genres - if existing books are fiction, exclude non-fiction
+                  const bookCategories = (item.volumeInfo?.categories ?? item.categories ?? []).map((c: string) => (c || "").toLowerCase())
                   const existingGenres = new Set(
                     existingBooksByAuthor
                       .flatMap(b => b.categories || [])
                       .map(g => g.toLowerCase())
                   )
-                  
-                  const bookCategories = (item.volumeInfo?.categories || []).map((c: string) => c.toLowerCase())
-                  const bookDescription = (item.volumeInfo?.description || "").toLowerCase()
-                  
-                  // If existing books are clearly fiction, exclude books that are clearly non-fiction
                   const hasFictionGenre = Array.from(existingGenres).some(g => 
                     g.includes("fiction") || g.includes("novel") || g.includes("literature")
                   )
-                  
                   if (hasFictionGenre) {
-                    const nonFictionIndicators = [
-                      "biography", "autobiography", "history", "historical", 
-                      "non-fiction", "nonfiction", "reference", "academic"
-                    ]
-                    const isNonFiction = nonFictionIndicators.some(indicator =>
-                      bookCategories.some((c: string) => c.includes(indicator)) ||
-                      bookDescription.includes(indicator)
+                    // Only exclude if *categories* (not description) explicitly say non-fiction
+                    const nonFictionInCategories = ["biography", "autobiography", "non-fiction", "nonfiction", "reference", "academic"]
+                    const hasNonFictionCategory = nonFictionInCategories.some(indicator =>
+                      bookCategories.some((c: string) => c.includes(indicator))
                     )
-                    if (isNonFiction) {
-                      return false
-                    }
-                  }
-                  
-                  // If existing books are clearly non-fiction, exclude books that are clearly fiction
-                  const hasNonFictionGenre = Array.from(existingGenres).some(g =>
-                    g.includes("biography") || g.includes("history") || g.includes("non-fiction")
-                  )
-                  
-                  if (hasNonFictionGenre) {
-                    const fictionIndicators = ["fiction", "novel", "literature", "romance", "mystery", "thriller"]
-                    const isFiction = fictionIndicators.some(indicator =>
-                      bookCategories.some((c: string) => c.includes(indicator)) ||
-                      bookDescription.includes(indicator)
+                    // Allow "history" / "historical" only in categories that are clearly non-fiction (e.g. "History" as subject), not "historical fiction"
+                    const hasHistoryAsNonFiction = bookCategories.some((c: string) => 
+                      c === "history" || c === "biography" || c === "autobiography"
                     )
-                    if (isFiction && !bookCategories.some((c: string) => c.includes("biography") || c.includes("history"))) {
+                    if (hasNonFictionCategory || hasHistoryAsNonFiction) {
                       return false
                     }
                   }
@@ -851,6 +831,11 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
     // Create bookId once at the start of the filter function
     const bookId = `${book.title}-${getBookAuthor(book)}`
     
+    // Hide anything that's not the full publication (Storycuts, excerpts, samples, etc.)
+    if (isSpecialEdition(book)) {
+      return false
+    }
+
     // Search filter - search in title and author
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim()
@@ -978,6 +963,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
       }
     }
 
+    // Publication date: by default we show all books (past, up to today, and future).
+    // Only filter by date when the user explicitly sets upcomingOnly, fromDate, toDate, or yearRange.
     if (safeAdvancedFilters.upcomingOnly) {
       if (!book.publishedDate) return false
 
@@ -1055,36 +1042,41 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
       // Library shows all books (no additional filter)
     }
 
+    // Only apply fromDate/toDate if they are valid date strings; invalid values (e.g. "-1sdf") must not hide books
     if (safeAdvancedFilters.fromDate && book.publishedDate) {
-      if (book.publishedDate < safeAdvancedFilters.fromDate) {
-        return false
+      const fromDate = new Date(safeAdvancedFilters.fromDate)
+      if (!Number.isNaN(fromDate.getTime())) {
+        const bookDate = new Date(book.publishedDate)
+        if (!Number.isNaN(bookDate.getTime()) && bookDate < fromDate) return false
       }
     }
-
     if (safeAdvancedFilters.toDate && book.publishedDate) {
-      if (book.publishedDate > safeAdvancedFilters.toDate) {
-        return false
+      const toDate = new Date(safeAdvancedFilters.toDate)
+      if (!Number.isNaN(toDate.getTime())) {
+        const bookDate = new Date(book.publishedDate)
+        if (!Number.isNaN(bookDate.getTime()) && bookDate > toDate) return false
       }
     }
 
-    // Year range filtering
+    // Year range filtering (only 4-digit years 1000–2100 count; invalid input is ignored). Future years (e.g. 2026) are allowed.
     if (safeAdvancedFilters.yearRange) {
       const { start, end } = safeAdvancedFilters.yearRange
-      if (book.publishedDate && (start.trim() || end.trim())) {
+      const startNum = start.trim() ? parseInt(start, 10) : null
+      const endNum = end.trim() ? parseInt(end, 10) : null
+      const sensibleStart = startNum != null && !Number.isNaN(startNum) && startNum >= 1000 && startNum <= 2100 ? startNum : null
+      const sensibleEnd = endNum != null && !Number.isNaN(endNum) && endNum >= 1000 && endNum <= 2100 ? endNum : null
+
+      if (book.publishedDate && (sensibleStart != null || sensibleEnd != null)) {
         try {
           const bookDate = new Date(book.publishedDate)
           if (isNaN(bookDate.getTime())) {
             return false // Invalid date
           }
-          
           const bookYear = bookDate.getFullYear()
-          
-          
-          if (start.trim() && bookYear < parseInt(start)) {
+          if (sensibleStart != null && bookYear < sensibleStart) {
             return false
           }
-          
-          if (end.trim() && bookYear > parseInt(end)) {
+          if (sensibleEnd != null && bookYear > sensibleEnd) {
             return false
           }
         } catch (error) {

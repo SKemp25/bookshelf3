@@ -81,6 +81,9 @@ export default function AdvancedFilters({
     })
   }
 
+  const currentYear = new Date().getFullYear()
+  const yearOptions = Array.from({ length: currentYear - 1899 + 10 }, (_, i) => 1900 + i)
+
   const updateReadingStatus = (status: string, checked: boolean) => {
     const currentStatuses = Array.isArray(safeFilters.readingStatus) ? safeFilters.readingStatus : []
     let newStatuses
@@ -386,7 +389,7 @@ export default function AdvancedFilters({
             </div>
           </div>
 
-          {/* Year Range */}
+          {/* Publication Year - year picker dropdowns */}
           <div className="space-y-2">
             <div className="text-sm font-bold text-orange-700">Publication Year</div>
             <div className="grid grid-cols-2 gap-2">
@@ -394,27 +397,39 @@ export default function AdvancedFilters({
                 <Label htmlFor="year-start" className="text-xs text-orange-600">
                   From
                 </Label>
-                <Input
-                  id="year-start"
-                  type="number"
-                  placeholder="1900"
-                  value={safeFilters.yearRange.start}
-                  onChange={(e) => updateYearRange("start", e.target.value)}
-                  className="border-orange-200 focus:border-orange-400 h-8 text-sm"
-                />
+                <Select
+                  value={safeFilters.yearRange.start || "none"}
+                  onValueChange={(v) => updateYearRange("start", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger id="year-start" className="border-orange-200 focus:border-orange-400 h-8 text-sm">
+                    <SelectValue placeholder="No limit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No limit</SelectItem>
+                    {yearOptions.map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="year-end" className="text-xs text-orange-600">
-                  To (today: {new Date().getFullYear()}, future dates allowed)
+                  To
                 </Label>
-                <Input
-                  id="year-end"
-                  type="number"
-                  placeholder="No limit"
-                  value={safeFilters.yearRange.end}
-                  onChange={(e) => updateYearRange("end", e.target.value)}
-                  className="border-orange-200 focus:border-orange-400 h-8 text-sm"
-                />
+                <Select
+                  value={safeFilters.yearRange.end || "none"}
+                  onValueChange={(v) => updateYearRange("end", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger id="year-end" className="border-orange-200 focus:border-orange-400 h-8 text-sm">
+                    <SelectValue placeholder="No limit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No limit</SelectItem>
+                    {yearOptions.map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>

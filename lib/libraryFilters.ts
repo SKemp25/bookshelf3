@@ -244,7 +244,28 @@ export function isCollectedEdition(book: LibraryBookLike): boolean {
   if (/\bomnibus\b/i.test(identity)) return true
   if (/\b(box|boxed)\s+set\b/i.test(identity)) return true
   if (/\bcomplete\s+(trilogy|series|collection|quartet)\b/i.test(identity)) return true
+  // Multi-book collections and bundles (title only: single books often mention a bundle in the description)
+  if (/\b(collection set|books collection|book set|multi-book|bundle)\b/i.test(identity)) return true
+  if (/\d+\s*books?\s*collection|\d+-book\s*collection/i.test(identity)) return true
   return false
+}
+
+// Excerpts, Storycuts, samples and short reads are not the full publication
+const NOT_FULL_PUBLICATION_INDICATORS = [
+  "storycuts",
+  "story cuts",
+  "excerpt",
+  "sample chapter",
+  "short read",
+  "kindle single",
+  "amazon single",
+  "digital short",
+  "single short",
+]
+
+export function isPartialPublication(book: LibraryBookLike): boolean {
+  const identity = editionIdentityText(book)
+  return NOT_FULL_PUBLICATION_INDICATORS.some((indicator) => identity.includes(indicator))
 }
 
 export function isSpecialEdition(book: LibraryBookLike): boolean {
@@ -324,6 +345,12 @@ export function isRerelease(book: LibraryBookLike): boolean {
   if (TITLE_RERELEASE_KEYWORDS.some((keyword) => identity.includes(keyword))) {
     return true
   }
+  // Recent books (and ones with no usable date) often say "now a major motion picture"
+  // in the description of the original edition, so only the title counts for them.
+  const year = book.publishedDate ? new Date(book.publishedDate).getFullYear() : Number.NaN
+  if (Number.isNaN(year) || year >= new Date().getFullYear() - 2) {
+    return false
+  }
   if (DESCRIPTION_RERELEASE_KEYWORDS.some((keyword) => description.includes(keyword))) {
     return true
   }
@@ -337,6 +364,7 @@ export function isAllowedLibraryBook(book: LibraryBookLike): boolean {
   if (isSpecialEdition(book)) return false
   if (isRerelease(book)) return false
   if (isPromotionalCopy(book)) return false
+  if (isPartialPublication(book)) return false
   return true
 }
 
