@@ -41,6 +41,9 @@ export function normalizeTitleForGrouping(title: string): string {
     // Remove edition indicators from title
     .replace(/\s*\(.*edition.*\)/gi, "")
     .replace(/\s*\[.*edition.*\]/gi, "")
+    // Promotional subtitles ("Country People: A GMA Book Club Pick", ": A Novel")
+    .replace(/:[^:]*\bbook\s+club\b[^:]*$/i, "")
+    .replace(/:\s*a\s+novel\s*$/i, "")
     // Collapse apostrophes so "DON'T" and "DONT" group together
     .replace(/['\u2019]/g, "")
     // Normalize punctuation and whitespace
@@ -210,6 +213,7 @@ export function deduplicateBooks(books: any[], userCountry: string = "US") {
         "netflix cover", "media tie-in", "adaptation", "based on the",
         "inspiration for", "soon to be a", "major motion picture", "blockbuster film",
         "hit series", "popular series", "bestselling series", "award-winning series",
+        "book club pick", "book club selection",
       ]
       
       const titleA = (a.title || "").toLowerCase()

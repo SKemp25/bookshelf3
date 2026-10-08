@@ -3,6 +3,8 @@ import { describe, it } from "node:test"
 import {
   filterLibraryBooks,
   isAllowedLibraryBook,
+  isArchivalRecord,
+  isLikelyDifferentAuthor,
   isEnglishLanguage,
   isRerelease,
   isSpecialEdition,
@@ -114,5 +116,46 @@ describe("filterLibraryBooks", () => {
       kept.map((book) => `${book.title}|${book.language}`),
       ["Klara and the Sun|en", "Klara and the Sun|eng"],
     )
+  })
+})
+
+describe("namesakes and archival records", () => {
+  it("drops a namesake with a middle initial", () => {
+    const book = {
+      title: "The Book of Dan",
+      author: "Daniel Mason",
+      authors: ["Daniel Mason"],
+      description: "The first autobiography of Daniel W. Mason",
+      publishedDate: "2021-01-01",
+    }
+    assert.equal(isLikelyDifferentAuthor(book), true)
+    assert.equal(isAllowedLibraryBook(book), false)
+  })
+
+  it("keeps the author's own books", () => {
+    const own = {
+      title: "A Registry of My Passage Upon the Earth",
+      author: "Daniel Mason",
+      description: "A Pulitzer Prize Finalist: This collection of moving short stories by Daniel Mason",
+      publishedDate: "2020-01-01",
+      isbn: "9781984880000",
+    }
+    const noName = { title: "North Woods", author: "Daniel Mason", description: "A novel about a house in the woods" }
+    const ownMiddle = { title: "X", author: "George R. R. Martin", description: "By George R. R. Martin" }
+    assert.equal(isAllowedLibraryBook(own), true)
+    assert.equal(isLikelyDifferentAuthor(noName), false)
+    assert.equal(isLikelyDifferentAuthor(ownMiddle), false)
+  })
+
+  it("drops archival records", () => {
+    const deeds = {
+      title: "Daniel Mason Deeds",
+      author: "Daniel Mason",
+      description: "Deeds for land bought and sold in Massachusetts and New Hampshire by Daniel Mason.",
+      publishedDate: "1759-01-01",
+    }
+    assert.equal(isArchivalRecord(deeds), true)
+    assert.equal(isAllowedLibraryBook(deeds), false)
+    assert.equal(isArchivalRecord({ title: "Pride and Prejudice", author: "Jane Austen", publishedDate: "1813" }), false)
   })
 })

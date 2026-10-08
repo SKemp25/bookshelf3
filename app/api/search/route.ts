@@ -48,10 +48,12 @@ function mapGoogleItems(items: any[] | undefined): NormalizedBook[] {
       volumeInfo?.industryIdentifiers?.find((id: any) => id?.type === "ISBN_13")?.identifier ||
       volumeInfo?.industryIdentifiers?.find((id: any) => id?.type === "ISBN_10")?.identifier ||
       ""
+    // New and very old books often have no Google cover; Open Library may have one
+    // by ISBN (default=false gives a 404, so the app shows its placeholder instead of a blank)
     const thumb =
       volumeInfo?.imageLinks?.thumbnail?.replace("http:", "https:") ||
       volumeInfo?.imageLinks?.smallThumbnail?.replace("http:", "https:") ||
-      ""
+      (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false` : "")
 
     return {
       id: String(item?.id || `GB-${(volumeInfo?.title || "unknown").replace(/\s+/g, "")}-${author.replace(/\s+/g, "")}`),
