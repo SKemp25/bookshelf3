@@ -1,5 +1,8 @@
 export type LibraryBookLike = {
   title?: string
+  author?: string
+  authors?: string[]
+  isbn?: string
   subtitle?: string
   description?: string
   language?: string | string[]
@@ -357,8 +360,63 @@ export function isRerelease(book: LibraryBookLike): boolean {
   return false
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function primaryAuthor(book: LibraryBookLike): string {
+  return asText(book.authors?.[0] || book.author).trim()
+}
+
+// Catalogs sometimes file a namesake under the same name. "The Book of Dan" is
+// listed under "Daniel Mason" but its description is about "Daniel W. Mason".
+// When the text names the author only with an extra middle name or initial,
+// it is someone else.
+export function isLikelyDifferentAuthor(book: LibraryBookLike): boolean {
+  const name = primaryAuthor(book)
+  // "Atkinson, Kate" style names are rare from the catalogs; leave them alone
+  if (name.includes(",")) return false
+  const words = name.split(/\s+/).filter(Boolean)
+  if (words.length < 2) return false
+  const first = escapeRegExp(words[0])
+  const last = escapeRegExp(words[words.length - 1])
+  const ownMiddle = new Set(words.slice(1, -1).map((w) => w.replace(/\./g, "").toLowerCase()))
+  const text = [book.title, book.subtitle, book.description].map(asText).join(" ")
+
+  const exact = new RegExp(`\\b${escapeRegExp(words.join(" ")).replace(/ /g, "\\s+")}\\b`, "i")
+  if (exact.test(text)) return false
+
+  // "Daniel W. Mason", "Daniel Wesley Mason": one or two capitalized middle parts
+  const variant = new RegExp(`\\b${first}\\s+((?:[A-Za-z][a-z]*\\.?\\s+){1,2})${last}\\b`, "gi")
+  for (const match of text.matchAll(variant)) {
+    const middle = match[1].trim().split(/\s+/)
+    const capitalized = middle.every((part) => /^[A-Z]/.test(part))
+    const differs = middle.some((part) => !ownMiddle.has(part.replace(/\./g, "").toLowerCase()))
+    if (capitalized && differs) return true
+  }
+  return false
+}
+
+const ARCHIVAL_TITLE_PATTERN =
+  /\b(deeds?|indentures?|ledgers?|account\s+books?|land\s+grants?|family\s+papers|papers|records|manuscripts?)\b/i
+
+// Library catalogs mix in archival items such as "Daniel Mason Deeds" (1759):
+// land records and papers that carry a person's name but are not books by them
+export function isArchivalRecord(book: LibraryBookLike): boolean {
+  const title = `${asText(book.title)} ${asText(book.subtitle)}`
+  const lastName = primaryAuthor(book).split(/\s+/).pop() || ""
+  if (lastName && ARCHIVAL_TITLE_PATTERN.test(title) && new RegExp(`\\b${escapeRegExp(lastName)}\\b`, "i").test(title)) {
+    return true
+  }
+  const year = parseInt(asText(book.publishedDate), 10)
+  if (!Number.isNaN(year) && year < 1800 && !asText(book.isbn)) return true
+  return false
+}
+
 export function isAllowedLibraryBook(book: LibraryBookLike): boolean {
   if (!isEnglishLanguage(book.language)) return false
+  if (isLikelyDifferentAuthor(book)) return false
+  if (isArchivalRecord(book)) return false
   if (isSummarizedOrStudyGuide(book)) return false
   if (isCollectedEdition(book)) return false
   if (isSpecialEdition(book)) return false
