@@ -15,7 +15,7 @@ import type { Book, User as UserType, Platform, AdvancedFilterState } from "@/li
 import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics"
 import { normalizeAuthorName } from "./AuthorManager"
 import { saveUserAuthors } from "@/lib/database"
-import { deduplicateBooks, isAllowedLibraryBook } from "@/lib/utils"
+import { deduplicateBooks, isAllowedLibraryBook, remapMergedBookIds } from "@/lib/utils"
 import DataExport from "./DataExport"
 import { APIErrorBoundary, ComponentErrorBoundary } from "./ErrorBoundary"
 import { Card, CardContent } from "@/components/ui/card"
@@ -398,6 +398,20 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
     memoryAids: ["Show book covers"], // Default to showing book covers
     diagnosedWithMemoryIssues: false,
   })
+
+  // When editions of a book merge into one card, carry the reader's marks over to it
+  useEffect(() => {
+    if (!books.length) return
+    const remapSet = (prev: Set<string>) => {
+      const asMap = new Map(Array.from(prev, (id) => [id, true] as [string, boolean]))
+      const remapped = remapMergedBookIds(asMap, books)
+      return remapped === asMap ? prev : new Set(remapped.keys())
+    }
+    setReadBooks(remapSet)
+    setWantToReadBooks(remapSet)
+    setDontWantBooks(remapSet)
+    setBookRatings((prev) => remapMergedBookIds(prev, books))
+  }, [books])
 
   // Fetch books for all existing authors when component loads
   useEffect(() => {
