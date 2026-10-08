@@ -1,0 +1,3341 @@
+"use client"
+
+import { useState, useEffect, useMemo, useCallback } from "react"
+import AccountManager from "./AccountManager"
+import AuthorManager from "./AuthorManager"
+import BookGrid from "./BookGrid"
+import BookFilters from "./BookFilters"
+import AdvancedFilters from "./AdvancedFilters"
+import { defaultAdvancedFilters } from "@/lib/types"
+import BookRecommendations from "./BookRecommendations"
+import TooltipManager from "./TooltipManager"
+import OnboardingTour from "./OnboardingTour"
+import { logError } from "./ErrorLogger"
+import { ChevronDown, ChevronUp, Users, BookOpen, Settings, HelpCircle, Search, Grid3x3, List, ArrowUpDown, Filter, User, Download, LogOut, LogIn, X, Menu, Heart, BookmarkPlus, BookCheck, BookX, FileText } from "lucide-react"
+import type { Book, User as UserType, Platform, AdvancedFilterState } from "@/lib/types"
+import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics"
+import { normalizeAuthorName } from "./AuthorManager"
+import { saveUserAuthors } from "@/lib/database"
+import { deduplicateBooks, isAllowedLibraryBook, isSpecialEdition, remapMergedBookIds } from "@/lib/utils"
+import { fetchAuthorBooksWithCache } from "@/lib/apiCache"
+import DataExport from "./DataExport"
+import { APIErrorBoundary, ComponentErrorBoundary } from "./ErrorBoundary"
+import { Card, CardContent } from "@/components/ui/card"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { signOut } from "@/lib/actions"
+
+interface BookshelfClientProps {
+  user: any // Updated comment to reflect localStorage-based auth system
+  userProfile: any // Updated comment to reflect localStorage-based user profile
+}
+
+// Helper function to get author name from book (handles both old and new formats)
+const getBookAuthor = (book: any): string => {
+  return book.author || book.authors?.[0] || "Unknown"
+}
+
+// Define color themes inspired by artistic palettes
+export type ColorTheme = 'orange' | 'blue' | 'green' | 'purple' | 'teal' | 'neutral'
+
+export const colorThemes = {
+  orange: {
+    name: 'Penguin Orange',
+    description: 'Classic Penguin Books inspired',
+    bgGradient: 'bg-gradient-to-br from-orange-100 via-orange-50 to-orange-100',
+    headerGradient: 'bg-gradient-to-r from-orange-200 to-orange-300',
+    accent: 'orange',
+    accentLight: 'orange-50',
+    accentMedium: 'orange-200',
+    accentDark: 'orange-600',
+    textAccent: 'text-orange-700',
+    borderAccent: 'border-orange-200',
+    footerColor: '#fb923c',
+    emptyStateIcon: 'text-orange-500',
+    emptyStateTitle: 'text-orange-900',
+    emptyStateDesc: 'text-orange-700',
+  },
+  blue: {
+    name: 'Literary Blue',
+    description: 'Calming blue tones',
+    bgGradient: 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-600',
+    headerGradient: 'bg-gradient-to-r from-blue-500 to-blue-600',
+    accent: 'blue',
+    accentLight: 'blue-50',
+    accentMedium: 'blue-200',
+    accentDark: 'blue-600',
+    textAccent: 'text-blue-700',
+    borderAccent: 'border-blue-200',
+    footerColor: '#2563eb',
+    emptyStateIcon: 'text-blue-200',
+    emptyStateTitle: 'text-white',
+    emptyStateDesc: 'text-blue-100',
+  },
+  green: {
+    name: 'British Racing Green',
+    description: 'Classic dark green palette',
+    bgGradient: 'bg-gradient-to-br from-green-800 via-green-900 to-green-950',
+    headerGradient: 'bg-gradient-to-r from-green-900 to-green-950',
+    accent: 'green',
+    accentLight: 'green-50',
+    accentMedium: 'green-200',
+    accentDark: 'green-900',
+    textAccent: 'text-green-900',
+    borderAccent: 'border-green-200',
+    footerColor: '#14532d',
+    emptyStateIcon: 'text-green-300',
+    emptyStateTitle: 'text-white',
+    emptyStateDesc: 'text-green-100',
+  },
+  purple: {
+    name: 'Creative Purple',
+    description: 'Artistic purple tones',
+    bgGradient: 'bg-gradient-to-br from-purple-400 via-purple-500 to-purple-600',
+    headerGradient: 'bg-gradient-to-r from-purple-500 to-purple-600',
+    accent: 'purple',
+    accentLight: 'purple-50',
+    accentMedium: 'purple-200',
+    accentDark: 'purple-600',
+    textAccent: 'text-purple-700',
+    borderAccent: 'border-purple-200',
+    footerColor: '#9333ea',
+    emptyStateIcon: 'text-purple-200',
+    emptyStateTitle: 'text-white',
+    emptyStateDesc: 'text-purple-100',
+  },
+  teal: {
+    name: 'Modern Teal',
+    description: 'Contemporary teal palette',
+    bgGradient: 'bg-gradient-to-br from-teal-400 via-teal-500 to-teal-600',
+    headerGradient: 'bg-gradient-to-r from-teal-500 to-teal-600',
+    accent: 'teal',
+    accentLight: 'teal-50',
+    accentMedium: 'teal-200',
+    accentDark: 'teal-600',
+    textAccent: 'text-teal-700',
+    borderAccent: 'border-teal-200',
+    footerColor: '#0d9488',
+    emptyStateIcon: 'text-teal-200',
+    emptyStateTitle: 'text-white',
+    emptyStateDesc: 'text-teal-100',
+  },
+  neutral: {
+    name: 'Neutral',
+    description: 'Subtle gray tones',
+    bgGradient: 'bg-gradient-to-br from-gray-300 via-gray-400 to-gray-500',
+    headerGradient: 'bg-gradient-to-r from-gray-500 to-gray-600',
+    accent: 'gray',
+    accentLight: 'gray-50',
+    accentMedium: 'gray-200',
+    accentDark: 'gray-600',
+    textAccent: 'text-gray-700',
+    borderAccent: 'border-gray-200',
+    footerColor: '#4b5563',
+    emptyStateIcon: 'text-gray-400',
+    emptyStateTitle: 'text-gray-900',
+    emptyStateDesc: 'text-gray-700',
+  },
+}
+
+// Define platform options by category (outside component to prevent recreation on every render)
+const platformCategories = {
+  Print: [
+    { name: "Amazon Books", defaultUrl: "https://www.amazon.com/s?k={title}&i=stripbooks", placeholder: "https://www.amazon.com/s?k={title}&i=stripbooks" },
+    { name: "Barnes & Noble", defaultUrl: "https://www.barnesandnoble.com/s/{title}", placeholder: "https://www.barnesandnoble.com/s/{title}" },
+    { name: "Bookshop.org", defaultUrl: "https://bookshop.org/books?keywords={title}", placeholder: "https://bookshop.org/books?keywords={title}" },
+    { name: "IndieBound", defaultUrl: "https://www.indiebound.org/search/book?keys={title}", placeholder: "https://www.indiebound.org/search/book?keys={title}" },
+  ],
+  Audio: [
+    { name: "Audible", defaultUrl: "https://www.audible.com/search?keywords={title}", placeholder: "https://www.audible.com/search?keywords={title}" },
+    { name: "Libro.fm", defaultUrl: "https://libro.fm/search?q={title}", placeholder: "https://libro.fm/search?q={title}" },
+    { name: "Spotify", defaultUrl: "https://open.spotify.com/search/{title}", placeholder: "https://open.spotify.com/search/{title}" },
+    { name: "Apple Books", defaultUrl: "https://books.apple.com/us/search?term={title}", placeholder: "https://books.apple.com/us/search?term={title}" },
+  ],
+  Ebook: [
+    { name: "Kindle", defaultUrl: "https://read.amazon.com/kindle-library", placeholder: "https://read.amazon.com/kindle-library" },
+    { name: "Kobo", defaultUrl: "https://www.kobo.com/us/en/search?query={title}", placeholder: "https://www.kobo.com/us/en/search?query={title}" },
+    { name: "Apple Books", defaultUrl: "https://books.apple.com/us/search?term={title}", placeholder: "https://books.apple.com/us/search?term={title}" },
+    { name: "Google Play Books", defaultUrl: "https://play.google.com/store/books/search?q={title}", placeholder: "https://play.google.com/store/books/search?q={title}" },
+  ],
+  Library: [
+    { name: "WorldCat", defaultUrl: "https://www.worldcat.org/search?q={title}", placeholder: "https://www.worldcat.org/search?q={title}" },
+    { name: "Library", defaultUrl: "", placeholder: "https://yourlibrary.overdrive.com or https://libbyapp.com/library/yourlibrary" },
+    { name: "Hoopla", defaultUrl: "https://www.hoopladigital.com/search?q={title}", placeholder: "https://www.hoopladigital.com/search?q={title}" },
+    { name: "Local Library", defaultUrl: "", placeholder: "Enter your library's catalog URL" },
+  ],
+}
+
+export default function BookshelfClient({ user, userProfile }: BookshelfClientProps) {
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [currentUser, setCurrentUser] = useState("")
+  const [isHydrated, setIsHydrated] = useState(false)
+
+  const [authors, setAuthors] = useState<string[]>([])
+  const [books, setBooks] = useState<Book[]>([])
+  const [readBooks, setReadBooks] = useState<Set<string>>(new Set())
+  const [wantToReadBooks, setWantToReadBooks] = useState<Set<string>>(new Set())
+  const [dontWantBooks, setDontWantBooks] = useState<Set<string>>(new Set())
+  const [bookRatings, setBookRatings] = useState<Map<string, "loved" | "liked" | "didnt-like">>(new Map())
+  const [friends, setFriends] = useState<string[]>([])
+  const [selectedAuthors, setSelectedAuthors] = useState<string[]>([])
+  const [sortBy, setSortBy] = useState<string>("newest")
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["en"])
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([])
+  const [searchQuery, setSearchQuery] = useState<string>("")
+  const [showHeartedBooks, setShowHeartedBooks] = useState<boolean>(false)
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilterState>(defaultAdvancedFilters)
+  const [isAuthorsOpen, setIsAuthorsOpen] = useState(false)
+  const [isRecommendationsOpen, setIsRecommendationsOpen] = useState(false)
+  const [highContrast, setHighContrast] = useState(false)
+  const [footerView, setFooterView] = useState<"library" | "favorites" | "want-to-read" | "finished" | null>(null)
+  const [showExportDialog, setShowExportDialog] = useState(false)
+  // Initialize color theme from localStorage if available
+  const [colorTheme, setColorTheme] = useState<ColorTheme>(() => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('bookshelf_color_theme') as ColorTheme | null
+      if (savedTheme && colorThemes[savedTheme as ColorTheme]) {
+        return savedTheme as ColorTheme
+      }
+    }
+    return 'orange'
+  })
+  const [recentlyViewed, setRecentlyViewed] = useState<string[]>([])
+
+  // Collapsible sections for Preferences
+  const [isAccountInfoOpen, setIsAccountInfoOpen] = useState(false)
+  const [isReadingPrefsOpen, setIsReadingPrefsOpen] = useState(false)
+  const [isDisplaySettingsOpen, setIsDisplaySettingsOpen] = useState(false)
+  const [isReadingPlatformsOpen, setIsReadingPlatformsOpen] = useState(false)
+  const [isDataSupportOpen, setIsDataSupportOpen] = useState(false)
+
+  // Handle hydration and check login state
+  useEffect(() => {
+    // Set hydrated immediately to prevent infinite loading
+    setIsHydrated(true)
+    
+    let lastLoggedIn: boolean | null = null
+    let lastUser: string | null = null
+    
+    const checkLoginState = () => {
+      try {
+    const loggedIn = localStorage.getItem("bookshelf_is_logged_in") === "true"
+    const user = localStorage.getItem("bookshelf_current_user") || ""
+        
+        // Only update state if values actually changed to prevent unnecessary re-renders
+        if (loggedIn !== lastLoggedIn || user !== lastUser) {
+    setIsLoggedIn(loggedIn)
+    setCurrentUser(user)
+          lastLoggedIn = loggedIn
+          lastUser = user
+        }
+      } catch (error) {
+        console.error("Error checking login state:", error)
+        // Still set hydrated even if there's an error
+        setIsHydrated(true)
+      }
+    }
+    
+    // Check immediately
+    checkLoginState()
+    
+    // Throttle storage change handler to prevent excessive calls
+    let storageChangeTimeout: NodeJS.Timeout | null = null
+    let lastStorageCheck = 0
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "bookshelf_is_logged_in" || e.key === "bookshelf_current_user") {
+        const now = Date.now()
+        // Throttle to max once per 500ms to prevent violations
+        if (now - lastStorageCheck < 500) {
+          if (storageChangeTimeout) {
+            clearTimeout(storageChangeTimeout)
+          }
+          storageChangeTimeout = setTimeout(() => {
+            lastStorageCheck = Date.now()
+            checkLoginState()
+          }, 500 - (now - lastStorageCheck))
+          return
+        }
+        lastStorageCheck = now
+        // Use requestAnimationFrame to avoid blocking
+        requestAnimationFrame(() => {
+          checkLoginState()
+        })
+      }
+    }
+    
+    window.addEventListener("storage", handleStorageChange)
+    
+    // Throttle focus handler - use longer delay to prevent violations
+    let focusTimeout: NodeJS.Timeout | null = null
+    let lastFocusCheck = 0
+    const handleFocus = () => {
+      const now = Date.now()
+      // Throttle to max once per 1000ms
+      if (now - lastFocusCheck < 1000) {
+        if (focusTimeout) {
+          clearTimeout(focusTimeout)
+        }
+        focusTimeout = setTimeout(() => {
+          lastFocusCheck = Date.now()
+          requestAnimationFrame(() => {
+            checkLoginState()
+          })
+        }, 1000 - (now - lastFocusCheck))
+        return
+      }
+      lastFocusCheck = now
+      requestAnimationFrame(() => {
+        checkLoginState()
+      })
+    }
+    window.addEventListener("focus", handleFocus)
+    
+    // Re-check after a short delay to catch any race conditions
+    const timeoutId = setTimeout(() => {
+      checkLoginState()
+    }, 200)
+    
+    // Throttle visibility change handler - use longer delay
+    let visibilityTimeout: NodeJS.Timeout | null = null
+    let lastVisibilityCheck = 0
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        const now = Date.now()
+        // Throttle to max once per 1000ms
+        if (now - lastVisibilityCheck < 1000) {
+          if (visibilityTimeout) {
+            clearTimeout(visibilityTimeout)
+          }
+          visibilityTimeout = setTimeout(() => {
+            lastVisibilityCheck = Date.now()
+            requestAnimationFrame(() => {
+              checkLoginState()
+            })
+          }, 1000 - (now - lastVisibilityCheck))
+          return
+        }
+        lastVisibilityCheck = now
+        requestAnimationFrame(() => {
+          checkLoginState()
+        })
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    
+    // Safety timeout - force hydration after 2 seconds even if something goes wrong
+    const safetyTimeout = setTimeout(() => {
+      setIsHydrated(true)
+    }, 2000)
+    
+    return () => {
+      window.removeEventListener("storage", handleStorageChange)
+      window.removeEventListener("focus", handleFocus)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+      if (storageChangeTimeout) clearTimeout(storageChangeTimeout)
+      if (focusTimeout) clearTimeout(focusTimeout)
+      if (visibilityTimeout) clearTimeout(visibilityTimeout)
+      clearTimeout(timeoutId)
+      clearTimeout(safetyTimeout)
+    }
+  }, [])
+  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
+  const [isRecentlyViewedOpen, setIsRecentlyViewedOpen] = useState(false) // Added recently viewed section state
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false) // Added filters section state
+  const [isTooltipTourActive, setIsTooltipTourActive] = useState(false) // Added contextual tooltip tour state
+  const [isOnboardingTourActive, setIsOnboardingTourActive] = useState(false) // Onboarding tour for new users
+  const [recommendedAuthors, setRecommendedAuthors] = useState<Set<string>>(new Set())
+  
+  // Initialize platforms state - will be loaded from localStorage in useEffect
+  const [platforms, setPlatforms] = useState<Platform[]>([
+    { name: "Kindle", url: "https://read.amazon.com/kindle-library", enabled: true, category: "Ebook" },
+  ])
+  const [isDataLoaded, setIsDataLoaded] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  
+  // New Apple Books layout state
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false)
+  const [showAuthorsDialog, setShowAuthorsDialog] = useState(false)
+  const [showFiltersDialog, setShowFiltersDialog] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showAuthDialog, setShowAuthDialog] = useState(false)
+  const isMobileLayout = useIsMobile()
+  const showSidebar = sidebarOpen // Show sidebar on all devices when open
+
+  const [userState, setUserState] = useState<UserType>({
+    name: "My Bookshelf",
+    email: "",
+    phone: "",
+    country: "",
+    cityState: "",
+    preferredLanguages: ["en"],
+    preferredGenres: [],
+    preferredAgeRange: [],
+    settings: {
+      defaultLanguage: "en",
+      preferredPlatforms: ["Kindle"],
+      readingMethods: ["Print Books", "E-books", "Audiobooks"],
+    },
+    publicationTypePreferences: [],
+    readingMethod: ["Print Books", "E-books", "Audiobooks"],
+    ageRange: "",
+    suggestNewAuthors: false,
+    dateOfBirth: "",
+    preferredReadingTime: "",
+    readingGoal: 0,
+    memoryAids: ["Show book covers"], // Default to showing book covers
+    diagnosedWithMemoryIssues: false,
+  })
+
+  // When editions of a book merge into one card, carry the reader's marks over to it
+  useEffect(() => {
+    if (!books.length) return
+    const remapSet = (prev: Set<string>) => {
+      const asMap = new Map(Array.from(prev, (id) => [id, true] as [string, boolean]))
+      const remapped = remapMergedBookIds(asMap, books)
+      return remapped === asMap ? prev : new Set(remapped.keys())
+    }
+    setReadBooks(remapSet)
+    setWantToReadBooks(remapSet)
+    setDontWantBooks(remapSet)
+    setBookRatings((prev) => remapMergedBookIds(prev, books))
+  }, [books])
+
+  // Fetch books for all existing authors when component loads
+  useEffect(() => {
+    const fetchBooksForAuthors = async () => {
+      if (!isDataLoaded || !authors.length) {
+        return
+      }
+      // A saved shelf keeps its books, but is refreshed once a day so new
+      // releases appear and older entries pick up missing descriptions and covers
+      const refreshKey = `bookshelf_last_refresh_${currentUser}`
+      const isRefresh = books.length > 0
+      if (isRefresh) {
+        try {
+          const lastRefresh = Number(localStorage.getItem(refreshKey) || 0)
+          if (Date.now() - lastRefresh < 24 * 60 * 60 * 1000) return
+          localStorage.setItem(refreshKey, String(Date.now()))
+        } catch {
+          return
+        }
+      }
+      try {
+        const { fetchAuthorBooksWithCache } = await import("@/lib/apiCache")
+        const allBooks: Book[] = []
+        const startTime = performance.now()
+        
+        for (let i = 0; i < authors.length; i++) {
+          const author = authors[i]
+          try {
+            // Add delay between author fetches to avoid rate limiting
+            if (i > 0) {
+              await new Promise(resolve => setTimeout(resolve, 1500))
+            }
+            const authorBooks = await fetchAuthorBooksWithCache(author)
+            if (authorBooks && authorBooks.length > 0) {
+              // Get existing books by this author to use as reference
+              const existingBooksByAuthor = books.filter(book => {
+                const bookAuthor = getBookAuthor(book)
+                return normalizeAuthorName(bookAuthor).toLowerCase() === normalizeAuthorName(author).toLowerCase()
+              })
+              
+              // Validate books: author match only. Support both API format (author, categories) and volumeInfo format.
+              const validatedBooks = authorBooks.filter((item: any) => {
+                const apiAuthor = item.volumeInfo?.authors?.[0] || item.author || ""
+                if (!apiAuthor) return false
+                
+                const bookAuthor = normalizeAuthorName(apiAuthor).toLowerCase()
+                const searchedAuthor = normalizeAuthorName(author).toLowerCase()
+                
+                // Require exact name match (after normalization)
+                if (bookAuthor !== searchedAuthor) {
+                  return false
+                }
+                
+                // If we have existing books by this author, only exclude when categories clearly say non-fiction.
+                // Don't use description alone (e.g. "historical" in description would hide historical fiction like The Women).
+                if (existingBooksByAuthor.length > 0) {
+                  const bookCategories = (item.volumeInfo?.categories ?? item.categories ?? []).map((c: string) => (c || "").toLowerCase())
+                  const existingGenres = new Set(
+                    existingBooksByAuthor
+                      .flatMap(b => b.categories || [])
+                      .map(g => g.toLowerCase())
+                  )
+                  const hasFictionGenre = Array.from(existingGenres).some(g => 
+                    g.includes("fiction") || g.includes("novel") || g.includes("literature")
+                  )
+                  if (hasFictionGenre) {
+                    // Only exclude if *categories* (not description) explicitly say non-fiction
+                    const nonFictionInCategories = ["biography", "autobiography", "non-fiction", "nonfiction", "reference", "academic"]
+                    const hasNonFictionCategory = nonFictionInCategories.some(indicator =>
+                      bookCategories.some((c: string) => c.includes(indicator))
+                    )
+                    // Allow "history" / "historical" only in categories that are clearly non-fiction (e.g. "History" as subject), not "historical fiction"
+                    const hasHistoryAsNonFiction = bookCategories.some((c: string) => 
+                      c === "history" || c === "biography" || c === "autobiography"
+                    )
+                    if (hasNonFictionCategory || hasHistoryAsNonFiction) {
+                      return false
+                    }
+                  }
+                }
+                
+                return true
+              })
+              
+              allBooks.push(...validatedBooks)
+            }
+          } catch (error) {
+            console.error(`Error fetching books for ${author}:`, error)
+          }
+        }
+        if (allBooks.length > 0) {
+          if (isRefresh) {
+            setBooks((prev) => deduplicateBooks([...prev, ...allBooks], userState.country || "US"))
+          } else {
+            setBooks(deduplicateBooks(allBooks, userState.country || "US"))
+          }
+          
+          const endTime = performance.now()
+          const duration = endTime - startTime
+          if (duration > 5000) {
+            logError(`Fetching books took ${(duration / 1000).toFixed(2)}s for ${authors.length} authors`, "warning")
+          }
+        }
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error))
+        logError(err, "error")
+        console.error("Error fetching books for authors:", error)
+      }
+    }
+    fetchBooksForAuthors()
+  }, [isDataLoaded, authors])
+
+  useEffect(() => {
+    if (isLoggedIn && currentUser) {
+      const userPrefsKey = `bookshelf_user_${currentUser}`
+      const savedUserPrefs = localStorage.getItem(userPrefsKey)
+
+      if (savedUserPrefs) {
+        try {
+          const userPrefs = JSON.parse(savedUserPrefs)
+          setUserState((prev) => ({
+            ...prev,
+            name: userPrefs.name || currentUser,
+            email: userPrefs.email || currentUser,
+            phone: userPrefs.phone || "",
+            country: userPrefs.country || "",
+            cityState: userPrefs.cityState || "",
+            preferredLanguages: userPrefs.preferredLanguages || ["en"],
+            preferredGenres: userPrefs.preferredGenres || [],
+            preferredAgeRange: userPrefs.preferredAgeRange || [],
+            ageRange: userPrefs.ageRange || "",
+            readingMethod: userPrefs.readingMethod || ["Print Books", "E-books", "Audiobooks"],
+            publicationTypePreferences: userPrefs.publicationTypePreferences || [],
+            suggestNewAuthors: userPrefs.suggestNewAuthors || false,
+            dateOfBirth: userPrefs.dateOfBirth || "",
+            preferredReadingTime: userPrefs.preferredReadingTime || "",
+            readingGoal: userPrefs.readingGoal || 0,
+            memoryAids: userPrefs.memoryAids && userPrefs.memoryAids.length > 0 ? userPrefs.memoryAids : ["Show book covers"], // Default to showing book covers if not set
+            diagnosedWithMemoryIssues: userPrefs.diagnosedWithMemoryIssues || false,
+            settings: userPrefs.settings || prev.settings, // Preserve settings
+          }))
+          console.log("User profile loaded:", { name: userPrefs.name, email: userPrefs.email })
+        } catch (error) {
+          console.error("Error loading user preferences:", error)
+        }
+      }
+    }
+  }, [isLoggedIn, currentUser])
+
+  useEffect(() => {
+    if (isLoggedIn && currentUser) {
+      const userPrefsKey = `bookshelf_user_${currentUser}`
+      localStorage.setItem(userPrefsKey, JSON.stringify(userState))
+    }
+  }, [userState, isLoggedIn, currentUser])
+
+  // Load color theme from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('bookshelf_color_theme') as ColorTheme | null
+      if (savedTheme && colorThemes[savedTheme as ColorTheme]) {
+        setColorTheme(savedTheme as ColorTheme)
+      }
+    }
+  }, [])
+
+  // Save color theme to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('bookshelf_color_theme', colorTheme)
+    }
+  }, [colorTheme])
+
+  // Load platforms from localStorage (only once when user logs in)
+  const [platformsLoaded, setPlatformsLoaded] = useState(false)
+  useEffect(() => {
+    if (isLoggedIn && currentUser && !platformsLoaded) {
+      const savedPlatforms = localStorage.getItem(`platforms_${currentUser}`)
+      if (savedPlatforms) {
+        try {
+          const parsed = JSON.parse(savedPlatforms)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Migrate old "OverDrive/Libby" entries to "Library"
+            const migrated = parsed.map((platform: Platform) => {
+              if (platform.name === "OverDrive/Libby" || platform.name === "OverDrive" || platform.name === "Libby") {
+                return {
+                  ...platform,
+                  name: "Library",
+                  category: "Library" as const,
+                }
+              }
+              return platform
+            })
+            
+            // Remove duplicates - keep only one "Library" entry if multiple exist
+            const libraryPlatforms = migrated.filter((p: Platform) => p.name === "Library" && p.category === "Library")
+            const otherPlatforms = migrated.filter((p: Platform) => !(p.name === "Library" && p.category === "Library"))
+            
+            // If multiple library platforms exist, keep the enabled one, or the first one
+            const uniqueLibrary = libraryPlatforms.length > 0 
+              ? [libraryPlatforms.find((p: Platform) => p.enabled) || libraryPlatforms[0]]
+              : []
+            
+            const deduplicated = [...otherPlatforms, ...uniqueLibrary]
+            setPlatforms(deduplicated)
+            setPlatformsLoaded(true)
+          }
+        } catch (e) {
+          console.error("Error parsing saved platforms:", e)
+          setPlatformsLoaded(true)
+        }
+      } else {
+        setPlatformsLoaded(true)
+      }
+    }
+  }, [isLoggedIn, currentUser, platformsLoaded])
+
+  // Save platforms to localStorage (with debounce to prevent excessive saves)
+  useEffect(() => {
+    if (isLoggedIn && currentUser && platforms.length > 0) {
+      const timeoutId = setTimeout(() => {
+        localStorage.setItem(`platforms_${currentUser}`, JSON.stringify(platforms))
+      }, 300)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [platforms, isLoggedIn, currentUser])
+
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (!isLoggedIn || !currentUser) return
+
+      try {
+        const startTime = performance.now()
+        // Load user-specific data
+        const userDataKey = `bookshelf_data_${currentUser}`
+        const savedData = localStorage.getItem(userDataKey)
+        const isNewUser = !savedData || savedData === "{}"
+        
+        if (savedData) {
+          const parsedData = JSON.parse(savedData)
+          setAuthors(parsedData.authors || [])
+          const normalizedBooks = (parsedData.books || []).map((b: any) => ({
+            ...b,
+            author: b?.author || (Array.isArray(b?.authors) ? b.authors[0] : b?.author) || "Unknown",
+            authors: Array.isArray(b?.authors) && b.authors.length > 0 ? b.authors : (b?.author ? [b.author] : []),
+          }))
+          setBooks(deduplicateBooks(normalizedBooks, userState.country || "US"))
+          setReadBooks(new Set(parsedData.readBooks || []))
+          setWantToReadBooks(new Set(parsedData.wantToReadBooks || []))
+          setDontWantBooks(new Set(parsedData.dontWantBooks || []))
+          setFriends(parsedData.friends || [])
+          setPlatforms(parsedData.platforms || platforms)
+          setRecommendedAuthors(new Set(parsedData.recommendedAuthors || []))
+          // Load book ratings
+          if (parsedData.bookRatings) {
+            setBookRatings(new Map(Object.entries(parsedData.bookRatings)))
+          }
+          
+          const endTime = performance.now()
+          const duration = endTime - startTime
+          if (duration > 1000) {
+            logError(`Loading user data took ${(duration / 1000).toFixed(2)}s`, "warning")
+          }
+        }
+        setIsDataLoaded(true)
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error))
+        logError(err, "error")
+        console.error("Error loading user data:", error)
+        setIsDataLoaded(true)
+      }
+    }
+
+    loadUserData()
+  }, [isLoggedIn, currentUser])
+
+  const handleOnboardingTourComplete = useCallback(() => {
+    setIsOnboardingTourActive(false)
+    if (currentUser) {
+      localStorage.setItem(`bookshelf_onboarding_seen_${currentUser}`, "true")
+    }
+  }, [currentUser])
+
+  useEffect(() => {
+    if (!isLoggedIn || !isDataLoaded || !currentUser) return
+
+    const userDataKey = `bookshelf_data_${currentUser}`
+    const dataToSave = {
+      authors,
+      books,
+      readBooks: Array.from(readBooks),
+      wantToReadBooks: Array.from(wantToReadBooks),
+      dontWantBooks: Array.from(dontWantBooks),
+      bookRatings: Object.fromEntries(bookRatings),
+      user: userState,
+      platforms,
+      friends,
+      recommendedAuthors: Array.from(recommendedAuthors),
+      lastUpdated: new Date().toISOString(),
+    }
+    localStorage.setItem(userDataKey, JSON.stringify(dataToSave))
+  }, [
+    authors,
+    books,
+    readBooks,
+    wantToReadBooks,
+    dontWantBooks,
+    bookRatings,
+    userState,
+    platforms,
+    friends,
+    recommendedAuthors,
+    isLoggedIn,
+    isDataLoaded,
+    currentUser,
+  ])
+
+  useEffect(() => {
+    if (isDataLoaded && authors.length === 0 && books.length === 0 && isLoggedIn) {
+      setShowOnboarding(true)
+    } else {
+      setShowOnboarding(false)
+    }
+  }, [authors.length, books.length, isDataLoaded, isLoggedIn])
+
+  // Show contextual tooltip tour on first login
+  useEffect(() => {
+    if (isLoggedIn && currentUser && isDataLoaded) {
+      const hasSeenTour = localStorage.getItem(`bookshelf_tour_seen_${currentUser}`)
+      if (!hasSeenTour) {
+        // Small delay to ensure UI is ready
+        setTimeout(() => {
+          setIsTooltipTourActive(true)
+        }, 1000)
+      }
+    }
+  }, [isLoggedIn, currentUser, isDataLoaded])
+
+  const getAgeRangeKeywords = (ageRange: string) => {
+    const keywords: Record<string, string[]> = {
+      "Children (0-12)": [
+        "children",
+        "kids",
+        "juvenile",
+        "picture book",
+        "early reader",
+        "beginning reader",
+        "ages 0",
+        "ages 1",
+        "ages 2",
+        "ages 3",
+        "ages 4",
+        "ages 5",
+        "ages 6",
+        "ages 7",
+        "ages 8",
+        "ages 9",
+        "ages 10",
+        "ages 11",
+        "ages 12",
+        "kindergarten",
+        "preschool",
+        "toddler",
+        "baby",
+        "infant",
+      ],
+      "Young Adult (13-17)": [
+        "young adult",
+        "ya",
+        "teen",
+        "teenage",
+        "adolescent",
+        "high school",
+        "ages 13",
+        "ages 14",
+        "ages 15",
+        "ages 16",
+        "ages 17",
+        "coming of age",
+        "first love",
+        "school drama",
+      ],
+    }
+    return keywords[ageRange] || []
+  }
+
+  const matchesAgeRange = (book: Book, ageRange: string) => {
+    if (!ageRange) return true
+
+    // For 18+, show all books (no filtering)
+    if (ageRange === "Adult (18+)") {
+      return true
+    }
+
+    const keywords = getAgeRangeKeywords(ageRange)
+    const searchText = `${book.title || ""} ${book.description || ""} ${(book.categories || []).join(" ")}`.toLowerCase()
+
+    // For children's books (0-12), only match if explicitly children's content
+    if (ageRange === "Children (0-12)") {
+      return keywords.some((keyword: string) => searchText.includes(keyword.toLowerCase()))
+    }
+
+    // For teen books (13-17), only match if explicitly teen/YA content
+    if (ageRange === "Young Adult (13-17)") {
+      return keywords.some((keyword: string) => searchText.includes(keyword.toLowerCase()))
+    }
+
+    return true
+  }
+
+  const filteredAndLimitedBooks = useMemo(() => {
+    try {
+      const startTime = performance.now()
+      const base = (books || []).filter((book) => {
+    // Create bookId once at the start of the filter function
+    const bookId = `${book.title}-${getBookAuthor(book)}`
+    
+    // Hide anything that's not the full publication (Storycuts, excerpts, samples, etc.)
+    if (isSpecialEdition(book)) {
+      return false
+    }
+
+    // Search filter - search in title and author
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      const titleMatch = (book.title || "").toLowerCase().includes(query)
+      const authorMatch = (getBookAuthor(book) || "").toLowerCase().includes(query)
+      if (!titleMatch && !authorMatch) {
+        return false
+      }
+    }
+
+    // Library rule: English-language original editions only (no reissues or summaries).
+    if (!isAllowedLibraryBook(book)) {
+      return false
+    }
+
+    // Age range filtering: Only filter for 0-12 and 13-17, 18+ shows all books
+    if (userState.ageRange && !matchesAgeRange(book, userState.ageRange)) {
+      return false
+    }
+
+    // Only show books by authors in your authors list — match by full name only (no last-name-only matching).
+    // This avoids different people with the same surname (e.g. Madeline Miller vs Kristen Miller vs Kirsten Miller) being treated as one.
+    const bookAuthor = getBookAuthor(book)
+    const normalizedBookAuthor = normalizeAuthorName(bookAuthor)
+    const authorMatches = authors.some(author => {
+      const normalizedAuthor = normalizeAuthorName(author)
+      const directMatch = author.toLowerCase().trim() === bookAuthor.toLowerCase().trim()
+      const normalizedMatch = normalizedAuthor.toLowerCase() === normalizedBookAuthor.toLowerCase()
+      return directMatch || normalizedMatch
+    })
+    if (!authorMatches) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🚫 Book "${book.title}" by "${bookAuthor}" (normalized: "${normalizedBookAuthor}") filtered out - not in authors list:`, authors)
+      }
+      return false
+    }
+
+    // Filter by selected authors if any are selected
+    if (selectedAuthors.length > 0) {
+      const selectedAuthorMatches = selectedAuthors.some(selectedAuthor =>
+        selectedAuthor.toLowerCase().trim() === bookAuthor.toLowerCase().trim() ||
+        normalizeAuthorName(selectedAuthor).toLowerCase() === normalizeAuthorName(bookAuthor).toLowerCase()
+      )
+      if (!selectedAuthorMatches) {
+        return false
+      }
+    }
+
+    const safeAdvancedFilters = advancedFilters || defaultAdvancedFilters
+
+    // Genre filtering - check both selectedGenres and advancedFilters.genre
+    const genreFilters: string[] = []
+    if ((selectedGenres || []).length > 0) {
+      genreFilters.push(...selectedGenres)
+    }
+    if (safeAdvancedFilters.genre && safeAdvancedFilters.genre !== "all") {
+      genreFilters.push(safeAdvancedFilters.genre)
+    }
+
+    if (genreFilters.length > 0) {
+      const bookGenres = (book.categories || []).map(g => g.toLowerCase())
+      const bookGenre = (book.genre || "").toLowerCase()
+      const bookDescription = (book.description || "").toLowerCase()
+      
+      // More precise genre matching - avoid substring matches that cause false positives
+      const hasMatchingGenre = genreFilters.some((filterGenre) => {
+        const filterLower = filterGenre.toLowerCase()
+        
+        // Exact match in categories
+        if (bookGenres.some(bg => bg === filterLower)) return true
+        
+        // Check for "Fiction" vs "Non-Fiction" distinction
+        if (filterLower === "fiction") {
+          // Fiction should NOT match if book has "non-fiction", "biography", "history", etc.
+          const nonFictionIndicators = [
+            "non-fiction", "nonfiction", "non fiction",
+            "biography", "autobiography", "biographical", "memoir",
+            "history", "historical", 
+            "reference", "academic", "scholarly",
+            "essay", "essays", "essay series",
+            "exploration", "thought-provoking", "era-defining",
+            "radio", "podcast", "series"
+          ]
+          const combinedText = `${bookGenres.join(" ")} ${bookGenre} ${bookDescription}`.toLowerCase()
+          if (nonFictionIndicators.some(indicator => combinedText.includes(indicator))) {
+            return false
+          }
+          // Fiction should match if it has fiction-related categories
+          const fictionIndicators = ["fiction", "novel", "literary fiction", "literature"]
+          return fictionIndicators.some(indicator => 
+            bookGenres.some(bg => bg.includes(indicator)) || 
+            bookDescription.includes(indicator) ||
+            bookGenre.includes(indicator)
+          )
+        }
+        
+        if (filterLower === "non-fiction" || filterLower === "nonfiction") {
+          // Non-fiction should match if it has non-fiction indicators
+          const nonFictionIndicators = ["non-fiction", "nonfiction", "biography", "autobiography", "history", "biographical", "reference", "academic", "scholarly", "essay", "memoir"]
+          return nonFictionIndicators.some(indicator => 
+            bookGenres.some(bg => bg.includes(indicator)) || 
+            bookDescription.includes(indicator) ||
+            bookGenre.includes(indicator)
+          )
+        }
+        
+        // For other genres, use substring matching but be more careful
+        return bookGenres.some((bookGenre) => {
+          const normalizedBookGenre = bookGenre.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim()
+          const normalizedFilter = filterLower.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim()
+          return normalizedBookGenre.includes(normalizedFilter) || normalizedFilter.includes(normalizedBookGenre)
+        }) || bookGenre.includes(filterLower) || bookDescription.includes(filterLower)
+      })
+      
+      if (!hasMatchingGenre) {
+        return false
+      }
+    }
+
+
+    if (safeAdvancedFilters.seriesOnly) {
+      // Only show books that are part of a series
+      if (!book.seriesInfo || !book.seriesInfo.name) {
+        return false
+      }
+    }
+
+    // Publication date: by default we show all books (past, up to today, and future).
+    // Only filter by date when the user explicitly sets upcomingOnly, fromDate, toDate, or yearRange.
+    if (safeAdvancedFilters.upcomingOnly) {
+      if (!book.publishedDate) return false
+
+      try {
+        const now = new Date()
+        let bookDate: Date
+        const dateStr = book.publishedDate.trim()
+        
+        // Handle different date formats
+        if (dateStr.match(/^\d{4}$/)) {
+          // Year only (e.g., "2026")
+          bookDate = new Date(`${dateStr}-01-01`)
+        } else if (dateStr.match(/^\d{4}-\d{2}$/)) {
+          // Year-month (e.g., "2026-07")
+          bookDate = new Date(`${dateStr}-01`)
+        } else {
+          // Full date (e.g., "2026-07-13")
+          bookDate = new Date(dateStr)
+        }
+
+        // Check if date is valid
+        if (isNaN(bookDate.getTime())) {
+          return false
+        }
+
+        // Only show books with future publication dates
+        if (bookDate <= now) {
+          return false
+        }
+      } catch (error) {
+        console.error("Error parsing date for upcoming filter:", book.publishedDate, error)
+        return false
+      }
+    }
+
+    if (safeAdvancedFilters.title && !(book.title || "").toLowerCase().includes(safeAdvancedFilters.title.toLowerCase())) {
+      return false
+    }
+
+    if (safeAdvancedFilters.excludeWords && typeof safeAdvancedFilters.excludeWords === "string") {
+      const excludeWords = safeAdvancedFilters.excludeWords
+        .toLowerCase()
+        .split(",")
+        .map((w) => w.trim())
+      const bookText = `${book.title || ""} ${book.description || ""}`.toLowerCase()
+      if (excludeWords.some((word) => bookText.includes(word))) {
+        return false
+      }
+    }
+
+    if (safeAdvancedFilters.description && book.description) {
+      if (!book.description.toLowerCase().includes(safeAdvancedFilters.description.toLowerCase())) {
+        return false
+      }
+    }
+
+    // Filter by hearted books (loved rating) - also check footer view
+    if (showHeartedBooks || footerView === "favorites") {
+      const rating = bookRatings.get(bookId)
+      if (rating !== "loved") {
+        return false
+      }
+    }
+
+    // Filter by footer view
+    if (footerView === "want-to-read") {
+      if (!wantToReadBooks.has(bookId)) {
+        return false
+      }
+    } else if (footerView === "finished") {
+      if (!readBooks.has(bookId)) {
+        return false
+      }
+    } else if (footerView === "library") {
+      // Library shows all books (no additional filter)
+    }
+
+    // Only apply fromDate/toDate if they are valid date strings; invalid values (e.g. "-1sdf") must not hide books
+    if (safeAdvancedFilters.fromDate && book.publishedDate) {
+      const fromDate = new Date(safeAdvancedFilters.fromDate)
+      if (!Number.isNaN(fromDate.getTime())) {
+        const bookDate = new Date(book.publishedDate)
+        if (!Number.isNaN(bookDate.getTime()) && bookDate < fromDate) return false
+      }
+    }
+    if (safeAdvancedFilters.toDate && book.publishedDate) {
+      const toDate = new Date(safeAdvancedFilters.toDate)
+      if (!Number.isNaN(toDate.getTime())) {
+        const bookDate = new Date(book.publishedDate)
+        if (!Number.isNaN(bookDate.getTime()) && bookDate > toDate) return false
+      }
+    }
+
+    // Year range filtering (only 4-digit years 1000–2100 count; invalid input is ignored). Future years (e.g. 2026) are allowed.
+    if (safeAdvancedFilters.yearRange) {
+      const { start, end } = safeAdvancedFilters.yearRange
+      const startNum = start.trim() ? parseInt(start, 10) : null
+      const endNum = end.trim() ? parseInt(end, 10) : null
+      const sensibleStart = startNum != null && !Number.isNaN(startNum) && startNum >= 1000 && startNum <= 2100 ? startNum : null
+      const sensibleEnd = endNum != null && !Number.isNaN(endNum) && endNum >= 1000 && endNum <= 2100 ? endNum : null
+
+      if (book.publishedDate && (sensibleStart != null || sensibleEnd != null)) {
+        try {
+          const bookDate = new Date(book.publishedDate)
+          if (isNaN(bookDate.getTime())) {
+            return false // Invalid date
+          }
+          const bookYear = bookDate.getFullYear()
+          if (sensibleStart != null && bookYear < sensibleStart) {
+            return false
+          }
+          if (sensibleEnd != null && bookYear > sensibleEnd) {
+            return false
+          }
+        } catch (error) {
+          return false
+        }
+      }
+    }
+
+    // Hide books based on selected statuses to hide
+    if (Array.isArray(safeAdvancedFilters.readingStatus) && safeAdvancedFilters.readingStatus.length > 0) {
+      // Check if this book should be hidden based on its status
+      for (const statusToHide of safeAdvancedFilters.readingStatus) {
+        if (statusToHide === "read" && (readBooks || new Set()).has(bookId)) {
+          return false // Hide this book
+        }
+        if (statusToHide === "want-to-read" && (wantToReadBooks || new Set()).has(bookId)) {
+          return false // Hide this book
+        }
+        if (
+          statusToHide === "unread" &&
+          !(readBooks || new Set()).has(bookId) &&
+          !(wantToReadBooks || new Set()).has(bookId) &&
+          !(dontWantBooks || new Set()).has(bookId)
+        ) {
+          return false // Hide this book (it has no status)
+        }
+      }
+    }
+
+    // Hide passed books by default unless showPassedBooks is true
+    if ((dontWantBooks || new Set()).has(bookId) && !(safeAdvancedFilters as any).showPassedBooks) {
+      return false // Hide passed books unless explicitly shown
+    }
+
+    
+    return true
+  })
+
+    // Apply deduplication to ensure only original published versions are shown
+    const deduplicatedBase = deduplicateBooks(base, userState.country || "US")
+
+    const showN = userState.settings?.showLastNBooks
+    if (showN && showN !== "all") {
+      const grouped: Record<string, Book[]> = {}
+      deduplicatedBase.forEach((b) => {
+        const key = b.author || "Unknown"
+        if (!grouped[key]) grouped[key] = []
+        grouped[key].push(b)
+      })
+      const result: Book[] = []
+      Object.values(grouped).forEach((arr) => {
+        const sorted = [...arr].sort((a, b) => new Date(b.publishedDate || "1900").getTime() - new Date(a.publishedDate || "1900").getTime())
+        result.push(...sorted.slice(0, Number(showN)))
+      })
+      return result
+    }
+    return deduplicatedBase
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error))
+      logError(err, "error")
+      // Return empty array on error to prevent crash
+      return []
+    }
+  }, [
+    books,
+    searchQuery,
+    userState.preferredLanguages,
+    userState.ageRange,
+    authors,
+    selectedAuthors,
+    selectedGenres,
+    advancedFilters,
+    showHeartedBooks,
+    footerView,
+    bookRatings,
+    readBooks,
+    wantToReadBooks,
+    dontWantBooks,
+    userState.country,
+    userState.settings?.showLastNBooks,
+  ])
+
+  const getDefaultPlatformUrl = (platformName: string) => {
+    const userPlatform = platforms.find((p) => p.name === platformName)
+    if (userPlatform && userPlatform.url) {
+      return userPlatform.url
+    }
+
+    switch (platformName) {
+      case "Kindle":
+        return "https://read.amazon.com/kindle"
+      case "Audible":
+        return "https://www.audible.com/"
+      case "Books":
+        return "https://www.amazon.com/s?k={title}&i=stripbooks"
+      case "Library":
+        return "https://www.worldcat.org"
+      default:
+        return ""
+    }
+  }
+
+  const enabledPlatforms = (platforms || [])
+    .filter((platform) => platform.enabled)
+    // Remove duplicate library platforms - keep only one
+    .reduce((acc: Platform[], platform: Platform) => {
+      // If this is a library platform, check if we already have one
+      if (platform.category === "Library" || platform.name === "Library" || platform.name === "OverDrive/Libby") {
+        const hasLibrary = acc.some(p => 
+          p.category === "Library" || p.name === "Library" || p.name === "OverDrive/Libby"
+        )
+        if (!hasLibrary) {
+          // Normalize library platform name to "Library"
+          acc.push({
+            ...platform,
+            name: "Library",
+            category: "Library",
+          })
+        }
+      } else {
+        acc.push(platform)
+      }
+      return acc
+    }, [])
+    .map((platform) => ({
+      ...platform,
+      url: platform.url || getDefaultPlatformUrl(platform.name),
+    }))
+
+  const onBooksFound = (newBooks: Book[]) => {
+    console.log("📚 onBooksFound called with", newBooks.length, "books")
+    console.log("📝 Current authors:", authors)
+    setBooks((prevBooks) => {
+      // Filter out books with invalid authors (but don't filter by authors list here)
+      // AuthorManager already ensures only matching books are passed
+      // The real filtering by authors list happens in filteredAndLimitedBooks
+      const validNewBooks = newBooks.filter(book => {
+        if (!isAllowedLibraryBook(book)) {
+          console.log("🚫 Filtered out non-English or non-original edition:", book.title, book.subtitle || "")
+          return false
+        }
+        
+        const author = getBookAuthor(book)
+        const normalizedAuthor = normalizeAuthorName(author)
+        const isValid = author && author !== "Unknown" && author !== "UNKNOWN AUTHOR" && author.trim() !== ""
+        if (!isValid) {
+          console.log("🚫 Filtered out book with invalid author:", book.title, "author:", author)
+        } else {
+          // Normalize the book's author to match the authors list format
+          book.author = normalizedAuthor
+          if (book.authors && book.authors.length > 0) {
+            book.authors[0] = normalizedAuthor
+          }
+          console.log("✅ Book author normalized:", book.title, "author:", author, "→", normalizedAuthor)
+        }
+        return isValid
+      })
+      
+      console.log("✅ Valid new books:", validNewBooks.length)
+      validNewBooks.forEach(book => {
+        const bookAuthor = getBookAuthor(book)
+        const normalizedAuthor = normalizeAuthorName(bookAuthor)
+        const authorInList = authors.some(a => normalizeAuthorName(a).toLowerCase() === normalizedAuthor.toLowerCase())
+        console.log(`  📖 "${book.title}" by "${bookAuthor}" (normalized: "${normalizedAuthor}") - in authors list: ${authorInList}`)
+      })
+      
+      // Replace existing books with same ID (to update covers/descriptions) and add new ones
+      const existingIds = new Set(prevBooks.map(book => book.id))
+      const booksToAdd = validNewBooks.filter(book => !existingIds.has(book.id))
+      const booksToReplace = validNewBooks.filter(book => existingIds.has(book.id))
+      
+      console.log("New books to add:", booksToAdd.length)
+      console.log("Existing books to replace (with updated covers/descriptions):", booksToReplace.length)
+      
+      // Remove old versions of books being replaced, then add new versions
+      const updatedBooks = prevBooks.filter(book => !booksToReplace.find(b => b.id === book.id))
+      
+      const allBooks = [...updatedBooks, ...booksToReplace, ...booksToAdd]
+      
+      // Deduplicate using the improved deduplicateBooks function
+      const deduplicatedBooks = deduplicateBooks(allBooks, userState.country || "US")
+      
+      console.log("Final book count:", deduplicatedBooks.length)
+      
+      return deduplicatedBooks
+    })
+  }
+
+  // Track recently viewed books for memory support
+  const trackRecentlyViewed = (bookId: string) => {
+    setRecentlyViewed(prev => {
+      const updated = [bookId, ...prev.filter(id => id !== bookId)].slice(0, 5) // Keep last 5
+      return updated
+    })
+  }
+
+  // Scroll to a specific book card
+  const scrollToBook = (bookId: string) => {
+    // Find the book card element by data-book-id
+    const bookElement = document.querySelector(`[data-book-id="${bookId}"]`)
+    if (bookElement) {
+      // Add a temporary highlight effect
+      bookElement.classList.add('ring-4', 'ring-orange-400', 'ring-opacity-75')
+      
+      // Scroll to the element with smooth behavior
+      bookElement.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'center',
+        inline: 'nearest'
+      })
+      
+      // Remove the highlight after 2 seconds
+      setTimeout(() => {
+        bookElement.classList.remove('ring-4', 'ring-orange-400', 'ring-opacity-75')
+      }, 2000)
+    }
+  }
+
+  // Simplified approach - no cleanup function, just add books directly
+
+  // Prevent hydration mismatch by not rendering until hydrated
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-400 via-orange-500 to-orange-600 flex items-center justify-center">
+        <div className="text-white text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const currentTheme = colorThemes[colorTheme] || colorThemes.orange
+
+  return (
+    <div className={`h-screen flex flex-col overflow-hidden ${highContrast ? 'bg-black' : currentTheme.bgGradient}`}>
+      {/* Header - Same depth as footer, white text */}
+      <header
+        className={`sticky top-0 z-50 text-white shadow-sm ${highContrast ? 'bg-black border-b-4 border-white' : ''}`}
+        style={!highContrast ? { backgroundColor: currentTheme.footerColor } : undefined}
+      >
+        <div className="flex items-center justify-between px-4 md:px-6 py-3 gap-2 md:gap-4">
+          {/* Left: App Title */}
+          <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setSearchQuery("")
+                  setSelectedAuthors([])
+                  setSelectedGenres([])
+                  setAdvancedFilters(defaultAdvancedFilters)
+                }}
+                className="text-lg md:text-xl font-bold text-white hover:opacity-80 transition-opacity"
+                data-onboarding="welcome"
+              >
+                MY BOOKCASE
+              </button>
+            </div>
+
+          {/* Center: Search Bar - More space on mobile */}
+          <div className={`flex-1 ${isMobileLayout ? 'mx-2' : 'max-w-xl md:max-w-2xl mx-2 md:mx-8'}`} data-onboarding="search">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                type="text"
+                placeholder="Search books..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 w-full text-sm md:text-base bg-white text-black placeholder:text-gray-500"
+              />
+            </div>
+          </div>
+
+          {/* Right: Mobile Menu (hamburger) or Desktop Action Buttons */}
+          {isMobileLayout ? (
+            <DropdownMenu open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="p-2 text-white hover:bg-white/20">
+                  <Menu className="w-5 h-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Menu</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                
+                {/* Authors - Prominent placement */}
+                <DropdownMenuItem onClick={() => { setShowAuthorsDialog(true); setMobileMenuOpen(false); }} data-onboarding="authors">
+                  <Users className="w-4 h-4 mr-2" />
+                  Authors & Books
+                </DropdownMenuItem>
+                
+                {/* View Options */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                      {viewMode === "grid" && <Grid3x3 className="w-4 h-4 mr-2" />}
+                      {viewMode === "list" && <List className="w-4 h-4 mr-2" />}
+                      View
+                      <ChevronDown className="w-4 h-4 ml-auto" />
+                    </DropdownMenuItem>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="left">
+                    <DropdownMenuItem onClick={() => { setViewMode("grid"); setMobileMenuOpen(false); }}>
+                      <Grid3x3 className="w-4 h-4 mr-2" />
+                      Grid View
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setViewMode("list"); setMobileMenuOpen(false); }}>
+                      <List className="w-4 h-4 mr-2" />
+                      List View
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                
+                {/* Sort Options */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                      <ArrowUpDown className="w-4 h-4 mr-2" />
+                      Sort
+                      <ChevronDown className="w-4 h-4 ml-auto" />
+                    </DropdownMenuItem>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="left">
+                    <DropdownMenuItem onClick={() => { setSortBy("newest"); setMobileMenuOpen(false); }}>
+                      Newest First
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setSortBy("oldest"); setMobileMenuOpen(false); }}>
+                      Oldest First
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setSortBy("title"); setMobileMenuOpen(false); }}>
+                      Title A-Z
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setSortBy("author"); setMobileMenuOpen(false); }}>
+                      Author A-Z
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setSortBy("pages"); setMobileMenuOpen(false); }}>
+                      Most Pages
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                
+                {/* Advanced Filters - Opens directly */}
+                <DropdownMenuItem onClick={() => { setShowFiltersDialog(true); setMobileMenuOpen(false); }}>
+                  <Filter className="w-4 h-4 mr-2" />
+                  Advanced Filters
+                </DropdownMenuItem>
+                
+                <DropdownMenuSeparator />
+                
+                {/* Settings Options */}
+                <DropdownMenuItem onClick={() => { setShowSettingsDialog(true); setMobileMenuOpen(false); }}>
+                  <User className="w-4 h-4 mr-2" />
+                  My Preferences
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setShowExportDialog(true); setMobileMenuOpen(false); }}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Data
+                </DropdownMenuItem>
+                
+                <DropdownMenuSeparator />
+                
+                {/* Login/Logout */}
+                {isLoggedIn ? (
+                  <form action={signOut}>
+                    <DropdownMenuItem asChild>
+                      <button type="submit" className="w-full flex items-center cursor-pointer">
+                        <LogOut className="w-4 h-4 mr-2" />
+                        Logout
+                      </button>
+                    </DropdownMenuItem>
+                  </form>
+                ) : (
+                  <DropdownMenuItem 
+                    onClick={(e) => { 
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowAuthDialog(true);
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    <LogIn className="w-4 h-4 mr-2" />
+                    Login
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+          <div className="flex items-center gap-0.5 md:gap-2 flex-shrink-0">
+            {/* View Dropdown - Hide on mobile */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="hidden md:flex gap-2 text-white hover:bg-white/20 p-2" data-onboarding="view-modes">
+                  {viewMode === "grid" && <Grid3x3 className="w-4 h-4" />}
+                  {viewMode === "list" && <List className="w-4 h-4" />}
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>View</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setViewMode("grid")}>
+                  <Grid3x3 className="w-4 h-4 mr-2" />
+                  Grid View
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setViewMode("list")}>
+                  <List className="w-4 h-4 mr-2" />
+                  List View
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Sort Dropdown - Hide on mobile */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="hidden md:flex gap-2 text-white hover:bg-white/20 p-2">
+                  <ArrowUpDown className="w-4 h-4" />
+                  <span className="hidden lg:inline">Sort</span>
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setSortBy("newest")}>
+                  Newest First
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy("oldest")}>
+                  Oldest First
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy("title")}>
+                  Title A-Z
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy("author")}>
+                  Author A-Z
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy("pages")}>
+                  Most Pages
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Authors Button - Opens Authors & Books dialog */}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="gap-1 md:gap-2 text-white hover:bg-white/20 p-1.5 md:p-2"
+              onClick={() => setShowAuthorsDialog(true)}
+              data-onboarding="authors"
+            >
+              <Users className="w-4 h-4" />
+              <span className="hidden lg:inline">Authors</span>
+            </Button>
+
+            {/* Filter Button - Opens Advanced Filters directly */}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="gap-1 md:gap-2 text-white hover:bg-white/20 p-1.5 md:p-2"
+              onClick={() => setShowFiltersDialog(true)}
+            >
+              <Filter className="w-4 h-4" />
+              <span className="hidden lg:inline">Filter</span>
+            </Button>
+
+            {/* Account Manager - Always visible on desktop */}
+            <div className="flex-shrink-0">
+              <AccountManager 
+                user={user} 
+                isLoggedIn={isLoggedIn}
+                showAuthDialog={showAuthDialog}
+                onAuthDialogChange={setShowAuthDialog}
+              />
+            </div>
+
+          </div>
+          )}
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Main Content - Book Grid */}
+        <main className="flex-1 px-4 md:px-6 py-6 overflow-y-auto" style={{ maxHeight: isMobileLayout ? 'calc(100vh - 180px)' : 'calc(100vh - 140px)' }}>
+          {/* Reading Progress */}
+          <div className="mb-4 flex items-center justify-between">
+            <div className="bg-white border-2 border-black rounded-lg px-3 py-1">
+                    <span className="text-black font-black text-xs">
+                READING PROGRESS {filteredAndLimitedBooks.filter(book => readBooks.has(`${book.title}-${book.author}`)).length} OF {filteredAndLimitedBooks.length}
+                    </span>
+                  </div>
+            <div className="bg-orange-100 border border-orange-200 rounded-lg px-3 py-1">
+                  <span className="text-orange-800 font-medium text-xs">
+                {filteredAndLimitedBooks.length} {filteredAndLimitedBooks.length === 1 ? 'book' : 'books'} shown
+                  </span>
+                </div>
+              </div>
+
+              <div data-tour="books" data-onboarding="book-actions">
+                <BookGrid
+                  books={filteredAndLimitedBooks}
+                sortBy={sortBy}
+                readBooks={readBooks}
+                wantToReadBooks={wantToReadBooks}
+                dontWantBooks={dontWantBooks}
+                friends={friends}
+                platforms={enabledPlatforms}
+                userId={currentUser}
+                onBookClick={trackRecentlyViewed}
+                highContrast={highContrast}
+                recommendedAuthors={recommendedAuthors}
+                memoryAids={userState.memoryAids || []}
+                viewMode={viewMode}
+                onSortChange={setSortBy}
+                emptyStateIconClass={currentTheme.emptyStateIcon}
+                emptyStateTitleClass={currentTheme.emptyStateTitle}
+                emptyStateDescClass={currentTheme.emptyStateDesc}
+                onAddAuthor={async (authorName) => {
+                  // Add the author to the authors list if not already present
+                  const normalizedAuthor = normalizeAuthorName(authorName)
+                  const authorExists = authors.some(author => 
+                    author.toLowerCase() === normalizedAuthor.toLowerCase()
+                  )
+                  
+                  if (!authorExists) {
+                    const updatedAuthors = [...authors, normalizedAuthor].sort((a, b) => {
+                      const getLastName = (name: string) => name.trim().split(" ").pop()?.toLowerCase() || ""
+                      return getLastName(a).localeCompare(getLastName(b))
+                    })
+                    
+                    setAuthors(updatedAuthors)
+                    
+                    // Mark as recommended origin
+                    setRecommendedAuthors((prev) => new Set([...Array.from(prev), normalizedAuthor]))
+                    
+                    // Save to database and track analytics
+                    if (currentUser) {
+                      saveUserAuthors(currentUser, updatedAuthors).catch(error => 
+                        console.error("Error saving authors to database:", error)
+                      )
+                      
+                      trackEvent(currentUser, {
+                        event_type: ANALYTICS_EVENTS.AUTHOR_ADDED,
+                        event_data: {
+                          author_name: normalizedAuthor,
+                          total_authors: updatedAuthors.length,
+                          source: "book_card_add_author",
+                          timestamp: new Date().toISOString(),
+                        },
+                      }).catch(error => 
+                        console.error("Error tracking author addition:", error)
+                      )
+                    }
+                    
+                    // Fetch all books by this author
+                    try {
+                      const { fetchAuthorBooksWithCache } = await import("@/lib/apiCache")
+                      const authorBooks = await fetchAuthorBooksWithCache(normalizedAuthor)
+                      if (authorBooks && authorBooks.length > 0) {
+                        // Add all books by this author
+                        onBooksFound(authorBooks)
+                      }
+                    } catch (error) {
+                      console.error("Error fetching author books:", error)
+                    }
+                  }
+                }}
+                onMarkAsRead={(bookId, title, author) => {
+                  setReadBooks((prev) => new Set([...prev, bookId]))
+                  setWantToReadBooks((prev) => {
+                    const newSet = new Set(prev)
+                    newSet.delete(bookId)
+                    return newSet
+                  })
+
+                  if (isLoggedIn) {
+                    const book = books.find((b) => `${b.title}-${b.author}` === bookId)
+                    trackEvent(currentUser, {
+                      event_type: ANALYTICS_EVENTS.BOOK_MARKED_READ,
+                      book_id: bookId,
+                      book_title: title,
+                      book_author: author,
+                      event_data: {
+                        genres: book?.categories || [],
+                        timestamp: new Date().toISOString(),
+                      },
+                    })
+                  }
+                }}
+                onUnmarkAsRead={(bookId, title, author) => {
+                  setReadBooks((prev) => {
+                    const newSet = new Set(prev)
+                    newSet.delete(bookId)
+                    return newSet
+                  })
+
+                  if (isLoggedIn) {
+                    const book = books.find((b) => `${b.title}-${b.author}` === bookId)
+                    trackEvent(currentUser, {
+                      event_type: ANALYTICS_EVENTS.BOOK_MARKED_UNREAD,
+                      book_id: bookId,
+                      book_title: title,
+                      book_author: author,
+                      event_data: {
+                        genres: book?.categories || [],
+                        timestamp: new Date().toISOString(),
+                      },
+                    })
+                  }
+                }}
+                onSetBookRating={(bookId, rating) => {
+                  setBookRatings((prev) => {
+                    const newMap = new Map(prev)
+                    if (rating) {
+                      newMap.set(bookId, rating)
+                    } else {
+                      newMap.delete(bookId)
+                    }
+                    return newMap
+                  })
+                  
+                  if (isLoggedIn && currentUser) {
+                    const book = books.find((b) => `${b.title}-${b.author}` === bookId)
+                    trackEvent(currentUser, {
+                      event_type: ANALYTICS_EVENTS.BOOK_MARKED_READ,
+                      book_id: bookId,
+                      book_title: book?.title || "",
+                      book_author: book?.author || "",
+                      event_data: {
+                        rating: rating,
+                        timestamp: new Date().toISOString(),
+                      },
+                    }).catch(err => console.error("Error tracking rating:", err))
+                  }
+                }}
+                bookRatings={bookRatings}
+                onMarkAsWant={(bookId, title, author) => {
+                  setWantToReadBooks((prev) => new Set([...prev, bookId]))
+                  setReadBooks((prev) => {
+                    const newSet = new Set(prev)
+                    newSet.delete(bookId)
+                    return newSet
+                  })
+
+                  if (isLoggedIn) {
+                    const book = books.find((b) => `${b.title}-${b.author}` === bookId)
+                    trackEvent(currentUser, {
+                      event_type: ANALYTICS_EVENTS.BOOK_MARKED_WANT,
+                      book_id: bookId,
+                      book_title: title,
+                      book_author: author,
+                      event_data: {
+                        genres: book?.categories || [],
+                        timestamp: new Date().toISOString(),
+                      },
+                    })
+                  }
+                }}
+                onToggleDontWant={(bookId, title, author) => {
+                  setDontWantBooks((prev) => {
+                    const newSet = new Set(prev)
+                    if (newSet.has(bookId)) {
+                      newSet.delete(bookId)
+                    } else {
+                      newSet.add(bookId)
+                    }
+                    return newSet
+                  })
+
+                  if (isLoggedIn) {
+                    const book = books.find((b) => `${b.title}-${b.author}` === bookId)
+                    trackEvent(currentUser, {
+                      event_type: ANALYTICS_EVENTS.BOOK_MARKED_PASS,
+                      book_id: bookId,
+                      book_title: book?.title,
+                      book_author: book?.author,
+                      event_data: {
+                        genres: book?.categories || [],
+                        timestamp: new Date().toISOString(),
+                      },
+                    })
+                  }
+                }}
+                sharedBooks={new Set()}
+                />
+            </div>
+          </main>
+        </div>
+
+      {/* Fixed Footer with Icon/Tools */}
+      <footer 
+        className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 shadow-lg"
+        style={{ backgroundColor: currentTheme.footerColor }}
+        data-onboarding="footer"
+      >
+        <div className="flex items-center justify-around px-4 py-2 md:px-8 md:py-3 [&_button]:text-white [&_button:hover]:text-white [&_button_svg]:text-white [&_button:hover_svg]:text-white">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className={`flex flex-col items-center gap-1 h-auto py-2 hover:bg-white/20 ${footerView === "library" ? "bg-white/20" : ""}`}
+            onClick={() => setFooterView(footerView === "library" ? null : "library")}
+            style={{ color: 'white' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = footerView === "library" ? 'rgba(255, 255, 255, 0.2)' : 'transparent'
+            }}
+          >
+            <BookOpen className="w-5 h-5 md:w-6 md:h-6" style={{ color: 'white' }} />
+            <span className="text-xs">Library</span>
+          </Button>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className={`flex flex-col items-center gap-1 h-auto py-2 hover:bg-white/20 ${footerView === "favorites" ? "bg-white/20" : ""}`}
+            onClick={() => setFooterView(footerView === "favorites" ? null : "favorites")}
+            style={{ color: 'white' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = footerView === "favorites" ? 'rgba(255, 255, 255, 0.2)' : 'transparent'
+            }}
+          >
+            <Heart className="w-5 h-5 md:w-6 md:h-6" style={{ color: 'white' }} />
+            <span className="text-xs">Favorites</span>
+          </Button>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className={`flex flex-col items-center gap-1 h-auto py-2 hover:bg-white/20 ${footerView === "want-to-read" ? "bg-white/20" : ""}`}
+            onClick={() => setFooterView(footerView === "want-to-read" ? null : "want-to-read")}
+            style={{ color: 'white' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = footerView === "want-to-read" ? 'rgba(255, 255, 255, 0.2)' : 'transparent'
+            }}
+          >
+            <BookmarkPlus className="w-5 h-5 md:w-6 md:h-6" style={{ color: 'white' }} />
+            <span className="text-xs">Want to Read</span>
+          </Button>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className={`flex flex-col items-center gap-1 h-auto py-2 hover:bg-white/20 ${footerView === "finished" ? "bg-white/20" : ""}`}
+            onClick={() => setFooterView(footerView === "finished" ? null : "finished")}
+            style={{ color: 'white' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = footerView === "finished" ? 'rgba(255, 255, 255, 0.2)' : 'transparent'
+            }}
+          >
+            <BookCheck className="w-5 h-5 md:w-6 md:h-6" style={{ color: 'white' }} />
+            <span className="text-xs">Finished</span>
+          </Button>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="flex flex-col items-center gap-1 h-auto py-2 hover:bg-white/20"
+            onClick={() => setShowSettingsDialog(true)}
+            data-onboarding="settings"
+            style={{ color: 'white' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = 'transparent'
+            }}
+          >
+            <Settings className="w-5 h-5 md:w-6 md:h-6" style={{ color: 'white' }} />
+            <span className="text-xs">Settings</span>
+          </Button>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="flex flex-col items-center gap-1 h-auto py-2 hover:bg-white/20"
+            onClick={() => setShowExportDialog(true)}
+            style={{ color: 'white' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'white'
+              e.currentTarget.style.backgroundColor = 'transparent'
+            }}
+          >
+            <FileText className="w-5 h-5 md:w-6 md:h-6" style={{ color: 'white' }} />
+            <span className="text-xs">Export</span>
+          </Button>
+        </div>
+      </footer>
+      
+      {/* Spacer to prevent content from being hidden behind fixed footer */}
+      <div className="h-16 md:h-20"></div>
+
+      {/* Export Dialog */}
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Export Data</DialogTitle>
+            <DialogDescription>
+              Export your bookshelf data including books, authors, and reading status.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-4">
+            <DataExport 
+              books={filteredAndLimitedBooks}
+              authors={authors}
+              readBooks={readBooks}
+              wantToReadBooks={wantToReadBooks}
+              dontWantBooks={dontWantBooks}
+              userProfile={userState}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Old sidebar content - now in dialogs */}
+      {false && (
+          <aside className={`md:col-span-1 space-y-6 ${isMobileMenuOpen ? "block order-1" : "hidden md:block order-2 md:order-1"}`}>
+            <div className="md:hidden flex justify-between items-center mb-4">
+              <h2 className="text-white font-bold text-lg">Menu</h2>
+              <button
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="bg-white text-black p-1 rounded border-2 border-black"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className={`bg-white rounded-lg shadow-lg border-4 border-black ${isAuthorsOpen ? 'p-2 md:p-4' : 'p-2 md:p-4 pb-0'}`}>
+              <button
+                data-tour="authors"
+                onClick={() => setIsAuthorsOpen(!isAuthorsOpen)}
+                className={`w-full flex items-center text-red-600 font-bold text-[10px] md:text-sm uppercase tracking-wide hover:bg-orange-50 p-2 md:p-4 -m-2 md:-m-4 rounded transition-colors ${isAuthorsOpen ? 'mb-3' : 'mb-0'}`}
+              >
+                <BookOpen className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0 mr-1 md:mr-2" />
+                <span className="flex-1 text-left min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">AUTHORS & BOOKS</span>
+                {isAuthorsOpen ? <ChevronUp className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0 ml-1 md:ml-2" /> : <ChevronDown className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0 ml-1 md:ml-2" />}
+              </button>
+
+              {isAuthorsOpen && (
+                <APIErrorBoundary>
+                  <ComponentErrorBoundary componentName="Author Manager">
+                <AuthorManager
+                  authors={authors}
+                  setAuthors={setAuthors}
+                  userId={currentUser || "guest"}
+                  onBooksFound={onBooksFound}
+                      onAuthorsChange={(newAuthors) => {
+                        setAuthors(newAuthors)
+                        // Also save to localStorage
+                        if (currentUser) {
+                          localStorage.setItem(`authors_${currentUser}`, JSON.stringify(newAuthors))
+                        }
+                      }}
+                    />
+                  </ComponentErrorBoundary>
+                </APIErrorBoundary>
+              )}
+            </div>
+
+            {userState.suggestNewAuthors && (
+              <div className={`bg-white rounded-lg shadow-lg border-4 border-black ${isRecommendationsOpen ? 'p-2 md:p-4' : 'p-2 md:p-4 pb-0'}`}>
+              <button
+                data-tour="recommendations"
+                onClick={() => setIsRecommendationsOpen(!isRecommendationsOpen)}
+                  className={`w-full flex items-center text-red-600 font-bold text-[10px] md:text-sm uppercase tracking-wide hover:bg-orange-50 p-2 md:p-4 -m-2 md:-m-4 rounded transition-colors ${isRecommendationsOpen ? 'mb-3' : 'mb-0'}`}
+                >
+                  <Users className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0 mr-1 md:mr-2" />
+                  <span className="flex-1 text-left min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">AUTHORS</span>
+                  {isRecommendationsOpen ? <ChevronUp className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0 ml-1 md:ml-2" /> : <ChevronDown className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0 ml-1 md:ml-2" />}
+              </button>
+
+              {isRecommendationsOpen && (
+                <Card className="bg-white border-orange-200">
+                  <CardContent className="p-4">
+                    <APIErrorBoundary>
+                      <ComponentErrorBoundary componentName="Book Recommendations">
+                        <BookRecommendations
+                      authors={authors.map(name => ({ id: name, name }))}
+                  books={books}
+                  readBooks={readBooks}
+                  wantToReadBooks={wantToReadBooks}
+                  bookRatings={bookRatings}
+                  user={userState}
+                  onBookClick={async (book) => {
+                    console.log("onBookClick called with book:", book)
+                    // Add the single book and include the author with just this one book
+                    const bookAuthor = book.author || book.authors?.[0]
+                    console.log("Extracted bookAuthor:", bookAuthor)
+                    
+                    if (!bookAuthor || bookAuthor === "Unknown Author") {
+                      console.error("No valid author found for book:", book.title)
+                      // Still try to add the book even without author
+                      onBooksFound([book])
+                      return
+                    }
+                    
+                    const normalizedAuthor = normalizeAuthorName(bookAuthor)
+                    console.log("Normalized author:", normalizedAuthor)
+                    
+                    const authorExists = authors.some(author => 
+                      author.toLowerCase() === normalizedAuthor.toLowerCase()
+                    )
+                    console.log("Author exists:", authorExists, "Current authors:", authors)
+                    
+                    // Ensure the book's author field matches the normalized author name
+                    // This is critical for the filtering logic to work
+                    const bookWithNormalizedAuthor = {
+                      ...book,
+                      author: normalizedAuthor,
+                      authors: book.authors ? [normalizedAuthor, ...book.authors.filter(a => a !== bookAuthor && a !== "Unknown Author")] : [normalizedAuthor]
+                    }
+                    
+                    if (!authorExists) {
+                      const updatedAuthors = [...authors, normalizedAuthor].sort((a, b) => {
+                        const getLastName = (name: string) => name.trim().split(" ").pop()?.toLowerCase() || ""
+                        return getLastName(a).localeCompare(getLastName(b))
+                      })
+                      
+                      console.log("Adding new author:", normalizedAuthor, "Updated authors list:", updatedAuthors)
+                      
+                      // Save to localStorage FIRST before updating state
+                      if (currentUser) {
+                        localStorage.setItem(`authors_${currentUser}`, JSON.stringify(updatedAuthors))
+                      }
+                      
+                      // Update authors state
+                      setAuthors(updatedAuthors)
+                      
+                      // Mark as recommended origin
+                      setRecommendedAuthors((prev) => new Set([...Array.from(prev), normalizedAuthor]))
+                      
+                      // Save to database and track analytics
+                      if (currentUser) {
+                        saveUserAuthors(currentUser, updatedAuthors).catch(error => 
+                          console.error("Error saving authors to database:", error)
+                        )
+                        
+                        trackEvent(currentUser, {
+                          event_type: ANALYTICS_EVENTS.AUTHOR_ADDED,
+                          event_data: {
+                            author_name: normalizedAuthor,
+                            total_authors: updatedAuthors.length,
+                            source: "recommendation_book_click",
+                            timestamp: new Date().toISOString(),
+                          },
+                        }).catch(error => 
+                          console.error("Error tracking author addition:", error)
+                        )
+                      }
+                      
+                      // Add the book - use a longer delay to ensure author state is fully updated
+                      // The filtering logic checks if author is in authors list, so we need to wait
+                      setTimeout(() => {
+                        console.log("Adding book with normalized author:", bookWithNormalizedAuthor)
+                        console.log("Current authors at time of adding book:", updatedAuthors)
+                        onBooksFound([bookWithNormalizedAuthor])
+                        
+                        setTimeout(() => {
+                          const bookElement = document.querySelector(`[data-book-id="${bookWithNormalizedAuthor.id}"]`)
+                          if (bookElement) {
+                            bookElement.scrollIntoView({ behavior: "smooth", block: "center" })
+                          }
+                        }, 200)
+                      }, 300) // Longer delay to ensure state propagation
+                    } else {
+                      // Author already exists, just add the book
+                      console.log("Author already exists, adding book:", bookWithNormalizedAuthor)
+                      onBooksFound([bookWithNormalizedAuthor])
+                      
+                      setTimeout(() => {
+                        const bookElement = document.querySelector(`[data-book-id="${bookWithNormalizedAuthor.id}"]`)
+                        if (bookElement) {
+                          bookElement.scrollIntoView({ behavior: "smooth", block: "center" })
+                        }
+                      }, 100)
+                    }
+                  }}
+                  onAuthorClick={async (authorName: string) => {
+                    // Note: This is kept for modal compatibility but not used in the new single-book recommendation system
+                    // Users add individual books, not entire authors
+                    // However, if user explicitly clicks "Add Author" in modal, we'll still support it
+                    const normalizedAuthor = normalizeAuthorName(authorName)
+                    const authorExists = authors.some(author => 
+                      author.toLowerCase() === normalizedAuthor.toLowerCase()
+                    )
+                    
+                    if (!authorExists) {
+                      const updatedAuthors = [...authors, normalizedAuthor].sort((a, b) => {
+                        const getLastName = (name: string) => name.trim().split(" ").pop()?.toLowerCase() || ""
+                        return getLastName(a).localeCompare(getLastName(b))
+                      })
+                      
+                      // Always add the author first, even if API fails
+                      setAuthors(updatedAuthors)
+                      
+                      // Mark as recommended origin
+                      setRecommendedAuthors((prev) => new Set([...Array.from(prev), normalizedAuthor]))
+                      
+                      // Save to database and track analytics
+                      if (currentUser) {
+                        saveUserAuthors(currentUser, updatedAuthors).catch(error => 
+                          console.error("Error saving authors to database:", error)
+                        )
+                        
+                        trackEvent(currentUser, {
+                          event_type: ANALYTICS_EVENTS.AUTHOR_ADDED,
+                          event_data: {
+                            author_name: normalizedAuthor,
+                            total_authors: updatedAuthors.length,
+                            source: "recommendation_author_click",
+                            timestamp: new Date().toISOString(),
+                          },
+                        }).catch(error => 
+                          console.error("Error tracking author addition:", error)
+                        )
+                      }
+                      
+                      // Fetch all books by this author (with retry logic)
+                      try {
+                        const { fetchAuthorBooksWithCache } = await import("@/lib/apiCache")
+                        const authorBooks = await fetchAuthorBooksWithCache(normalizedAuthor)
+                        if (authorBooks && authorBooks.length > 0) {
+                          // Add all books by this author
+                          onBooksFound(authorBooks)
+                        } else {
+                          // API returned no books (might be rate limited or author has no books)
+                          console.warn(`No books found for ${normalizedAuthor} - API may be rate limited or author has no books`)
+                          // Author is still added, user can manually add books later
+                        }
+                      } catch (error) {
+                        console.error("Error fetching author books:", error)
+                        // Author is still added even if API fails
+                        // User can manually add books or try again later
+                      }
+                    } else {
+                      // Author already exists, try to fetch their books anyway
+                      try {
+                        const { fetchAuthorBooksWithCache } = await import("@/lib/apiCache")
+                        const authorBooks = await fetchAuthorBooksWithCache(normalizedAuthor)
+                        if (authorBooks && authorBooks.length > 0) {
+                          // Add any new books by this author
+                          onBooksFound(authorBooks)
+                        }
+                      } catch (error) {
+                        console.error("Error fetching author books:", error)
+                      }
+                    }
+                  }}
+                />
+                      </ComponentErrorBoundary>
+                    </APIErrorBoundary>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+            )}
+
+
+            <div className={`bg-white rounded-lg shadow-lg border-4 border-black ${isPreferencesOpen ? 'p-2 md:p-4' : 'p-2 md:p-4 pb-0'}`}>
+              <button
+                data-tour="settings"
+                onClick={() => setIsPreferencesOpen(!isPreferencesOpen)}
+                className={`w-full flex items-center text-red-600 font-bold text-[10px] md:text-sm uppercase tracking-wide hover:bg-orange-50 p-2 md:p-4 -m-2 md:-m-4 rounded transition-colors ${isPreferencesOpen ? 'mb-3' : 'mb-0'}`}
+              >
+                <Settings className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0 mr-1 md:mr-2" />
+                <span className="flex-1 text-left min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">MY PREFERENCES</span>
+                {isPreferencesOpen ? <ChevronUp className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0 ml-1 md:ml-2" /> : <ChevronDown className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0 ml-1 md:ml-2" />}
+              </button>
+
+              {isPreferencesOpen && (
+                  <div className="space-y-3">
+                  {/* Account Information - Collapsible */}
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setIsAccountInfoOpen(!isAccountInfoOpen)}
+                      className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                    >
+                      <span>Account Information</span>
+                      {isAccountInfoOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    {isAccountInfoOpen && (
+                      <div className="space-y-2 pl-2">
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Full Name <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={userState.name}
+                          required
+                          onChange={(e) => {
+                            const capitalizedValue = e.target.value
+                              .split(" ")
+                              .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                              .join(" ")
+                            setUserState((prev) => ({ ...prev, name: capitalizedValue }))
+                          }}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Email Address <span className="text-red-500">*</span></label>
+                        <input
+                          type="email"
+                          value={userState.email}
+                          required
+                          onChange={(e) => setUserState((prev) => ({ ...prev, email: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
+                        <input
+                          type="tel"
+                          value={userState.phone}
+                          onChange={(e) => setUserState((prev) => ({ ...prev, phone: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">City and State</label>
+                        <input
+                          type="text"
+                          value={userState.cityState || ""}
+                          onChange={(e) => setUserState((prev) => ({ ...prev, cityState: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                          placeholder="e.g., New York, NY"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Country</label>
+                        <input
+                          type="text"
+                          value={userState.country || ""}
+                          onChange={(e) => setUserState((prev) => ({ ...prev, country: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                          placeholder="e.g., United States"
+                        />
+                    </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Date of Birth</label>
+                        <input
+                          type="date"
+                          value={userState.dateOfBirth || ""}
+                          onChange={(e) => setUserState((prev) => ({ ...prev, dateOfBirth: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Memory Aid Preferences</label>
+                        <div className="space-y-1 mt-1">
+                          <label className="flex items-center text-xs">
+                            <input
+                              type="checkbox"
+                              checked={userState.diagnosedWithMemoryIssues || false}
+                              onChange={(e) => setUserState((prev) => ({ ...prev, diagnosedWithMemoryIssues: e.target.checked }))}
+                              className="mr-2"
+                            />
+                            Have you been diagnosed with memory issues?
+                          </label>
+                          <label className="flex items-center text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(userState.memoryAids || []).includes("Show book covers")}
+                              onChange={(e) => {
+                                const currentAids = userState.memoryAids || []
+                                if (e.target.checked) {
+                                  setUserState((prev) => ({ ...prev, memoryAids: [...currentAids, "Show book covers"] }))
+                                } else {
+                                  setUserState((prev) => ({ ...prev, memoryAids: currentAids.filter((a) => a !== "Show book covers") }))
+                                }
+                              }}
+                              className="mr-2"
+                            />
+                            Show book covers
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reading Preferences - Collapsible */}
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setIsReadingPrefsOpen(!isReadingPrefsOpen)}
+                      className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                    >
+                      <span>Reading Preferences</span>
+                      {isReadingPrefsOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    {isReadingPrefsOpen && (
+                      <div className="space-y-3 pl-2">
+                  <div className="space-y-3">
+                          <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Languages</h4>
+                    <div className="space-y-1">
+                      {["English", "Spanish", "French", "German", "Italian", "Portuguese"].map((lang, index) => {
+                        const langCode = ["en", "es", "fr", "de", "it", "pt"][index]
+                        return (
+                          <label key={langCode} className="flex items-center text-xs">
+                            <input
+                              type="checkbox"
+                              checked={userState.preferredLanguages.includes(langCode)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setUserState((prev) => ({
+                                    ...prev,
+                                    preferredLanguages: [...prev.preferredLanguages, langCode],
+                                  }))
+                                } else {
+                                  setUserState((prev) => ({
+                                    ...prev,
+                                    preferredLanguages: prev.preferredLanguages.filter((l) => l !== langCode),
+                                  }))
+                                }
+                              }}
+                              className="mr-2"
+                            />
+                            {lang}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                          <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Reading Age Range</h4>
+                    <div className="space-y-1">
+                      {[
+                        { label: "0-12", value: "Children (0-12)" },
+                        { label: "13-17", value: "Young Adult (13-17)" },
+                        { label: "18+", value: "Adult (18+)" },
+                      ].map(({ label, value }) => (
+                        <label key={value} className="flex items-center text-xs">
+                          <input
+                            type="radio"
+                            name="ageRange"
+                            checked={userState.ageRange === value}
+                            onChange={() => setUserState((prev) => ({ ...prev, ageRange: value }))}
+                            className="mr-2"
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                          <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Genres</h4>
+                    <div className="space-y-1">
+                      {[
+                        "Fiction",
+                        "Mystery",
+                        "Romance",
+                        "Science Fiction",
+                        "Fantasy",
+                        "Thriller",
+                        "Historical Fiction",
+                        "Memoir/Biography",
+                      ].map((genre) => (
+                        <label key={genre} className="flex items-center text-xs">
+                          <input
+                            type="checkbox"
+                            checked={userState.preferredGenres.includes(genre)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setUserState((prev) => ({
+                                  ...prev,
+                                  preferredGenres: [...prev.preferredGenres, genre],
+                                }))
+                              } else {
+                                setUserState((prev) => ({
+                                  ...prev,
+                                  preferredGenres: prev.preferredGenres.filter((g) => g !== genre),
+                                }))
+                              }
+                            }}
+                            className="mr-2"
+                          />
+                          {genre}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                          <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Recommendations</h4>
+                    <div className="space-y-1">
+                      <label className="flex items-center text-xs">
+                        <input
+                          type="checkbox"
+                          checked={userState.suggestNewAuthors || false}
+                          onChange={(e) => {
+                            setUserState((prev) => ({
+                              ...prev,
+                              suggestNewAuthors: e.target.checked,
+                            }))
+                          }}
+                          className="mr-2"
+                        />
+                        Suggest new authors
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                          <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Publication Type</h4>
+                    <div className="space-y-1">
+                      {["Novels", "Short Stories", "Poetry", "Non-Fiction", "Biography/Memoir", "Essays"].map(
+                        (type) => (
+                          <label key={type} className="flex items-center text-xs">
+                            <input
+                              type="checkbox"
+                              checked={userState.publicationTypePreferences.includes(type)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setUserState((prev) => ({
+                                    ...prev,
+                                    publicationTypePreferences: [...prev.publicationTypePreferences, type],
+                                  }))
+                                } else {
+                                  setUserState((prev) => ({
+                                    ...prev,
+                                    publicationTypePreferences: prev.publicationTypePreferences.filter(
+                                      (t) => t !== type,
+                                    ),
+                                  }))
+                                }
+                              }}
+                              className="mr-2"
+                            />
+                            {type}
+                          </label>
+                        ),
+                      )}
+                    </div>
+                  </div>
+
+                        {/* Limit Books per Author */}
+                  <div className="space-y-3">
+                          <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Limit Books per Author</h4>
+                    <div className="flex flex-wrap gap-3 text-xs">
+                      {([3,5,10] as const).map((n) => (
+                        <label key={n} className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="showLastNBooks"
+                            checked={userState.settings?.showLastNBooks === n}
+                            onChange={() => setUserState((prev) => ({ ...prev, settings: { ...prev.settings, showLastNBooks: n } }))}
+                          />
+                          Last {n}
+                        </label>
+                      ))}
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="showLastNBooks"
+                          checked={userState.settings?.showLastNBooks === "all" || userState.settings?.showLastNBooks === undefined}
+                          onChange={() => setUserState((prev) => ({ ...prev, settings: { ...prev.settings, showLastNBooks: "all" } }))}
+                        />
+                        All
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-600">Show only the most recent publications per author to reduce overwhelm.</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reading Platforms - Collapsible */}
+                    <div className="space-y-2">
+                    <button
+                      onClick={() => setIsReadingPlatformsOpen(!isReadingPlatformsOpen)}
+                      className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                    >
+                      <span>Reading Platforms</span>
+                      {isReadingPlatformsOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    {isReadingPlatformsOpen && (
+                      <div className="space-y-4 pl-2">
+                        <p className="text-xs text-gray-600 mb-3">Select your preferred platforms for each reading format. You can choose multiple options per category.</p>
+                        
+                        {Object.entries(platformCategories).map(([category, options]) => (
+                      <div key={category} className="space-y-2 border-l-2 border-orange-200 pl-3">
+                        <h4 className="text-orange-700 font-semibold text-xs uppercase tracking-wide">{category}</h4>
+                        <div className="space-y-2">
+                          {options.map((option) => {
+                            const platform = platforms.find((p) => p.name === option.name && p.category === category)
+                            const isEnabled = platform?.enabled || false
+                            const url = platform?.url || option.defaultUrl
+
+                            return (
+                              <div key={option.name} className="space-y-1">
+                                <label className="flex items-center text-xs">
+                          <input
+                            type="checkbox"
+                                    checked={isEnabled}
+                            onChange={(e) => {
+                                      if (e.target.checked) {
+                                        // Add or enable platform
+                                        const existing = platforms.find((p) => p.name === option.name && p.category === category)
+                                        if (existing) {
+                              setPlatforms((prev) =>
+                                            prev.map((p) =>
+                                              p.name === option.name && p.category === category
+                                                ? { ...p, enabled: true }
+                                                : p
+                                            )
+                                          )
+                                        } else {
+                                          setPlatforms((prev) => [
+                                            ...prev,
+                                            {
+                                              name: option.name,
+                                              url: option.defaultUrl,
+                                              enabled: true,
+                                              category: category as "Print" | "Audio" | "Ebook" | "Library",
+                                            },
+                                          ])
+                                        }
+                                      } else {
+                                        // Disable platform
+                              setPlatforms((prev) =>
+                                          prev.map((p) =>
+                                            p.name === option.name && p.category === category
+                                              ? { ...p, enabled: false }
+                                              : p
+                              )
+                                        )
+                                      }
+                            }}
+                            className="mr-2"
+                          />
+                                  {option.name}
+                        </label>
+                                {isEnabled && (
+                        <input
+                          type="url"
+                                    value={url}
+                          onChange={(e) => {
+                            setPlatforms((prev) =>
+                                        prev.map((p) =>
+                                          p.name === option.name && p.category === category
+                                            ? { ...p, url: e.target.value }
+                                            : p
+                                        )
+                            )
+                          }}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                    placeholder={option.placeholder || option.defaultUrl}
+                        />
+                                )}
+                      </div>
+                            )
+                          })}
+                      </div>
+                      </div>
+                    ))}
+                    
+                        <p className="text-xs text-gray-500 mt-3">
+                          <strong>Note:</strong> For OverDrive/Libby libraries, enter the OverDrive base URL (e.g., https://mcplmd.overdrive.com). 
+                          If you have a Libby URL like https://libbyapp.com/library/mcplmd, we'll automatically convert it to the OverDrive format.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Display & Settings - Collapsible */}
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setIsDisplaySettingsOpen(!isDisplaySettingsOpen)}
+                      className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                    >
+                      <span>Display & Settings</span>
+                      {isDisplaySettingsOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    {isDisplaySettingsOpen && (
+                      <div className="space-y-3 pl-2">
+                        {/* Display Settings */}
+                        <div className="space-y-3">
+                          <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Display Settings</h4>
+                    
+                    {/* Color Theme Selector */}
+                    <div className="space-y-2">
+                      <Label className="text-sm text-orange-700">Color Theme</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(Object.entries(colorThemes) as [ColorTheme, typeof colorThemes[ColorTheme]][]).map(([key, theme]) => {
+                          const isSelected = colorTheme === key
+                          const borderClass = isSelected ? (
+                            key === 'orange' ? 'border-orange-600 bg-orange-50' :
+                            key === 'blue' ? 'border-blue-600 bg-blue-50' :
+                            key === 'green' ? 'border-green-600 bg-green-50' :
+                            key === 'purple' ? 'border-purple-600 bg-purple-50' :
+                            key === 'teal' ? 'border-teal-600 bg-teal-50' :
+                            'border-gray-600 bg-gray-50'
+                          ) : 'border-gray-200 bg-white hover:border-gray-300'
+                          
+                          const textClass = isSelected ? (
+                            key === 'orange' ? 'text-orange-700' :
+                            key === 'blue' ? 'text-blue-700' :
+                            key === 'green' ? 'text-green-700' :
+                            key === 'purple' ? 'text-purple-700' :
+                            key === 'teal' ? 'text-teal-700' :
+                            'text-gray-700'
+                          ) : 'text-gray-700'
+                          
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => setColorTheme(key as ColorTheme)}
+                              className={`p-3 rounded-lg border-2 transition-all text-left ${borderClass}`}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className={`w-4 h-4 rounded-full bg-gradient-to-br ${
+                                  key === 'orange' ? 'from-orange-400 to-orange-600' :
+                                  key === 'blue' ? 'from-blue-400 to-blue-600' :
+                                  key === 'green' ? 'from-green-800 to-green-950' :
+                                  key === 'purple' ? 'from-purple-400 to-purple-600' :
+                                  key === 'teal' ? 'from-teal-400 to-teal-600' :
+                                  'from-gray-300 to-gray-500'
+                                }`} />
+                                <span className={`text-xs font-semibold ${textClass}`}>
+                                  {theme.name}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500">{theme.description}</p>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* High Contrast Toggle */}
+                    <div className="flex items-center justify-between space-x-2">
+                      <Label htmlFor="high-contrast" className="text-sm text-orange-700 cursor-pointer">
+                        High Contrast Mode
+                      </Label>
+                      <Switch
+                        id="high-contrast"
+                        checked={highContrast}
+                        onCheckedChange={setHighContrast}
+                        className="data-[state=checked]:bg-orange-500"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Increases contrast for better visibility
+                        </p>
+                      </div>
+                    </div>
+                    )}
+                  </div>
+
+                  {/* Data & Support - Collapsible */}
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setIsDataSupportOpen(!isDataSupportOpen)}
+                      className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                    >
+                      <span>Data & Support</span>
+                      {isDataSupportOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    {isDataSupportOpen && (
+                      <div className="space-y-3 pl-2">
+                  {/* Data Export Section */}
+                  <div className="space-y-3">
+                          <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Data Export</h4>
+                    <div className="p-3 bg-orange-50 rounded border border-orange-200">
+                      <DataExport 
+                              books={filteredAndLimitedBooks}
+                        authors={authors}
+                        readBooks={readBooks}
+                        wantToReadBooks={wantToReadBooks}
+                        dontWantBooks={dontWantBooks}
+                        userProfile={userState}
+              />
+                    </div>
+            </div>
+
+                  {/* Help & Support Section */}
+                  <div className="space-y-3">
+                          <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Help & Support</h4>
+                    <div className="p-3 bg-blue-50 rounded border border-blue-200">
+                      <button
+                        onClick={() => setIsTooltipTourActive(true)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors font-medium"
+                      >
+                        <HelpCircle className="w-4 h-4" />
+                        Show App Tour
+                      </button>
+                      <p className="text-xs text-blue-600 mt-2 text-center">
+                        Take a guided tour to learn how to use all features
+                      </p>
+                  </div>
+                        </div>
+                      </div>
+                    )}
+                </div>
+                </div>
+              )}
+              </div>
+
+            {/* Recently Viewed Section for Memory Support */}
+            {recentlyViewed.length > 0 && (
+              <div className="bg-white rounded-lg shadow-lg border-4 border-black p-4">
+                <button
+                  onClick={() => setIsRecentlyViewedOpen(!isRecentlyViewedOpen)}
+                  className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide mb-3 hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span>🕒</span>
+                    RECENTLY VIEWED
+            </div>
+                  {isRecentlyViewedOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+                {isRecentlyViewedOpen && (
+                  <div className="space-y-2">
+                  {recentlyViewed.slice(0, 3).map((bookId) => {
+                    const book = books.find(b => b.id === bookId)
+                    if (!book) return null
+                    return (
+                      <div
+                        key={bookId}
+                        className="p-2 bg-orange-50 rounded border border-orange-200 cursor-pointer hover:bg-orange-100 transition-colors group"
+                        onClick={() => scrollToBook(bookId)}
+                        title="Click to scroll to book"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm text-gray-800 truncate">
+                              {book.title}
+                </div>
+                            <div className="text-xs text-gray-600 truncate">
+                              by {getBookAuthor(book)}
+                </div>
+              </div>
+                          <div className="ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <svg className="w-3 h-3 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+            </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  </div>
+                )}
+              </div>
+            )}
+          </aside>
+        )}
+
+      {/* Dialogs for Settings, Authors, Filters */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>My Preferences</DialogTitle>
+            <DialogDescription>
+              Customize your reading preferences, display settings, and manage your account.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-4">
+            <div className="space-y-6">
+              {/* Account Information - Collapsible */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => setIsAccountInfoOpen(!isAccountInfoOpen)}
+                  className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                >
+                  <span>Account Information</span>
+                  {isAccountInfoOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+                {isAccountInfoOpen && (
+                  <div className="space-y-2 pl-2">
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Full Name <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={userState.name}
+                          required
+                          onChange={(e) => {
+                            const capitalizedValue = e.target.value
+                              .split(" ")
+                              .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                              .join(" ")
+                            setUserState((prev) => ({ ...prev, name: capitalizedValue }))
+                          }}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+        </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Email Address <span className="text-red-500">*</span></label>
+                        <input
+                          type="email"
+                          value={userState.email}
+                          required
+                          onChange={(e) => setUserState((prev) => ({ ...prev, email: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
+                        <input
+                          type="tel"
+                          value={userState.phone}
+                          onChange={(e) => setUserState((prev) => ({ ...prev, phone: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">City and State</label>
+                        <input
+                          type="text"
+                          value={userState.cityState || ""}
+                          onChange={(e) => setUserState((prev) => ({ ...prev, cityState: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                          placeholder="e.g., New York, NY"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Country</label>
+                        <input
+                          type="text"
+                          value={userState.country || ""}
+                          onChange={(e) => setUserState((prev) => ({ ...prev, country: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                          placeholder="e.g., United States"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Date of Birth</label>
+                        <input
+                          type="date"
+                          value={userState.dateOfBirth || ""}
+                          onChange={(e) => setUserState((prev) => ({ ...prev, dateOfBirth: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Memory Aid Preferences</label>
+                        <div className="space-y-1 mt-1">
+                          <label className="flex items-center text-xs">
+                            <input
+                              type="checkbox"
+                              checked={userState.diagnosedWithMemoryIssues || false}
+                              onChange={(e) => setUserState((prev) => ({ ...prev, diagnosedWithMemoryIssues: e.target.checked }))}
+                              className="mr-2"
+                            />
+                            Have you been diagnosed with memory issues?
+                          </label>
+                          <label className="flex items-center text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(userState.memoryAids || []).includes("Show book covers")}
+                              onChange={(e) => {
+                                const currentAids = userState.memoryAids || []
+                                if (e.target.checked) {
+                                  setUserState((prev) => ({ ...prev, memoryAids: [...currentAids, "Show book covers"] }))
+                                } else {
+                                  setUserState((prev) => ({ ...prev, memoryAids: currentAids.filter((a) => a !== "Show book covers") }))
+                                }
+                              }}
+                              className="mr-2"
+                            />
+                            Show book covers
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+      </div>
+
+              {/* Reading Preferences - Collapsible */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => setIsReadingPrefsOpen(!isReadingPrefsOpen)}
+                  className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                >
+                  <span>Reading Preferences</span>
+                  {isReadingPrefsOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+                {isReadingPrefsOpen && (
+                  <div className="space-y-3 pl-2">
+                    <div className="space-y-3">
+                      <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Languages</h4>
+                      <div className="space-y-1">
+                        {["English", "Spanish", "French", "German", "Italian", "Portuguese"].map((lang, index) => {
+                          const langCode = ["en", "es", "fr", "de", "it", "pt"][index]
+                          return (
+                            <label key={langCode} className="flex items-center text-xs">
+                              <input
+                                type="checkbox"
+                                checked={userState.preferredLanguages.includes(langCode)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setUserState((prev) => ({
+                                      ...prev,
+                                      preferredLanguages: [...prev.preferredLanguages, langCode],
+                                    }))
+                                  } else {
+                                    setUserState((prev) => ({
+                                      ...prev,
+                                      preferredLanguages: prev.preferredLanguages.filter((l) => l !== langCode),
+                                    }))
+                                  }
+                                }}
+                                className="mr-2"
+                              />
+                              {lang}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Reading Age Range</h4>
+                      <div className="space-y-1">
+                        {[
+                          { label: "0-12", value: "Children (0-12)" },
+                          { label: "13-17", value: "Young Adult (13-17)" },
+                          { label: "18+", value: "Adult (18+)" },
+                        ].map(({ label, value }) => (
+                          <label key={value} className="flex items-center text-xs">
+                            <input
+                              type="radio"
+                              name="ageRange"
+                              checked={userState.ageRange === value}
+                              onChange={() => setUserState((prev) => ({ ...prev, ageRange: value }))}
+                              className="mr-2"
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Genres</h4>
+                      <div className="space-y-1">
+                        {[
+                          "Fiction",
+                          "Mystery",
+                          "Romance",
+                          "Science Fiction",
+                          "Fantasy",
+                          "Thriller",
+                          "Historical Fiction",
+                          "Memoir/Biography",
+                        ].map((genre) => (
+                          <label key={genre} className="flex items-center text-xs">
+                            <input
+                              type="checkbox"
+                              checked={userState.preferredGenres.includes(genre)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setUserState((prev) => ({
+                                    ...prev,
+                                    preferredGenres: [...prev.preferredGenres, genre],
+                                  }))
+                                } else {
+                                  setUserState((prev) => ({
+                                    ...prev,
+                                    preferredGenres: prev.preferredGenres.filter((g) => g !== genre),
+                                  }))
+                                }
+                              }}
+                              className="mr-2"
+                            />
+                            {genre}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Recommendations</h4>
+                      <div className="space-y-1">
+                        <label className="flex items-center text-xs">
+                          <input
+                            type="checkbox"
+                            checked={userState.suggestNewAuthors || false}
+                            onChange={(e) => setUserState((prev) => ({ ...prev, suggestNewAuthors: e.target.checked }))}
+                            className="mr-2"
+                          />
+                          Suggest new authors
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Publication Type</h4>
+                      <div className="space-y-1">
+                        {["Novels", "Short Stories", "Poetry", "Non-Fiction", "Biography/Memoir", "Essays"].map(
+                          (type) => (
+                            <label key={type} className="flex items-center text-xs">
+                              <input
+                                type="checkbox"
+                                checked={userState.publicationTypePreferences.includes(type)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setUserState((prev) => ({
+                                      ...prev,
+                                      publicationTypePreferences: [...prev.publicationTypePreferences, type],
+                                    }))
+                                  } else {
+                                    setUserState((prev) => ({
+                                      ...prev,
+                                      publicationTypePreferences: prev.publicationTypePreferences.filter(
+                                        (t) => t !== type,
+                                      ),
+                                    }))
+                                  }
+                                }}
+                                className="mr-2"
+                              />
+                              {type}
+                            </label>
+                          ),
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Limit Books per Author */}
+                    <div className="space-y-3">
+                      <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Limit Books per Author</h4>
+                      <div className="flex flex-wrap gap-3 text-xs">
+                        {([3,5,10] as const).map((n) => (
+                          <label key={n} className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="showLastNBooks"
+                              checked={userState.settings?.showLastNBooks === n}
+                              onChange={() => setUserState((prev) => ({ ...prev, settings: { ...prev.settings, showLastNBooks: n } }))}
+                            />
+                            Last {n}
+                          </label>
+                        ))}
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="showLastNBooks"
+                            checked={userState.settings?.showLastNBooks === "all" || userState.settings?.showLastNBooks === undefined}
+                            onChange={() => setUserState((prev) => ({ ...prev, settings: { ...prev.settings, showLastNBooks: "all" } }))}
+                          />
+                          All
+                        </label>
+                      </div>
+                      <p className="text-xs text-gray-600">Show only the most recent publications per author to reduce overwhelm.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Reading Platforms - Collapsible */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => setIsReadingPlatformsOpen(!isReadingPlatformsOpen)}
+                  className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                >
+                  <span>Reading Platforms</span>
+                  {isReadingPlatformsOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+                {isReadingPlatformsOpen && (
+                  <div className="space-y-4 pl-2">
+                    {Object.entries(platformCategories).map(([category, categoryPlatforms]) => (
+                      <div key={category} className="space-y-2">
+                        <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">{category}</h4>
+                        {categoryPlatforms.map((platform) => {
+                          const platformKey = `${category}_${platform.name}`
+                          const isEnabled = platforms.some(p => p.name === platform.name && p.category === category)
+                          const platformData = platforms.find(p => p.name === platform.name && p.category === category)
+                          
+                          return (
+                            <div key={platformKey} className="space-y-2 pl-2">
+                              <label className="flex items-center text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={isEnabled}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      const newPlatform: Platform = {
+                                        name: platform.name,
+                                        url: platform.defaultUrl || "",
+                                        enabled: true,
+                                        category: category as "Print" | "Audio" | "Ebook" | "Library",
+                                      }
+                                      setPlatforms((prev) => [...prev, newPlatform])
+                                    } else {
+                                      setPlatforms((prev) => prev.filter(p => !(p.name === platform.name && p.category === category)))
+                                    }
+                                  }}
+                                  className="mr-2"
+                                />
+                                {platform.name}
+                              </label>
+                              {isEnabled && (
+                                <input
+                                  type="text"
+                                  value={platformData?.url || platform.defaultUrl || ""}
+                                  onChange={(e) => {
+                                    setPlatforms((prev) => prev.map(p => 
+                                      p.name === platform.name && p.category === category
+                                        ? { ...p, url: e.target.value }
+                                        : p
+                                    ))
+                                  }}
+                                  placeholder={platform.placeholder || `Enter URL for ${platform.name}`}
+                                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                />
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Display & Settings - Collapsible */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => setIsDisplaySettingsOpen(!isDisplaySettingsOpen)}
+                  className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                >
+                  <span>Display & Settings</span>
+                  {isDisplaySettingsOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+                {isDisplaySettingsOpen && (
+                  <div className="space-y-3 pl-2">
+                    {/* Color Theme Selection */}
+                    <div className="space-y-3">
+                      <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Color Theme</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        {Object.entries(colorThemes).map(([key, theme]) => {
+                          const isSelected = colorTheme === key
+                          const borderClass = isSelected ? (
+                            key === 'orange' ? 'border-orange-600 bg-orange-50' :
+                            key === 'blue' ? 'border-blue-600 bg-blue-50' :
+                            key === 'green' ? 'border-green-600 bg-green-50' :
+                            key === 'purple' ? 'border-purple-600 bg-purple-50' :
+                            key === 'teal' ? 'border-teal-600 bg-teal-50' :
+                            'border-gray-600 bg-gray-50'
+                          ) : 'border-gray-200 bg-white hover:border-gray-300'
+                          
+                          const textClass = isSelected ? (
+                            key === 'orange' ? 'text-orange-700' :
+                            key === 'blue' ? 'text-blue-700' :
+                            key === 'green' ? 'text-green-700' :
+                            key === 'purple' ? 'text-purple-700' :
+                            key === 'teal' ? 'text-teal-700' :
+                            'text-gray-700'
+                          ) : 'text-gray-700'
+                          
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => setColorTheme(key as ColorTheme)}
+                              className={`p-3 rounded-lg border-2 transition-all text-left ${borderClass}`}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className={`w-4 h-4 rounded-full bg-gradient-to-br ${
+                                  key === 'orange' ? 'from-orange-400 to-orange-600' :
+                                  key === 'blue' ? 'from-blue-400 to-blue-600' :
+                                  key === 'green' ? 'from-green-800 to-green-950' :
+                                  key === 'purple' ? 'from-purple-400 to-purple-600' :
+                                  key === 'teal' ? 'from-teal-400 to-teal-600' :
+                                  'from-gray-300 to-gray-500'
+                                }`} />
+                                <span className={`text-xs font-semibold ${textClass}`}>
+                                  {theme.name}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500">{theme.description}</p>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* High Contrast Toggle */}
+                    <div className="flex items-center justify-between space-x-2">
+                      <Label htmlFor="high-contrast" className="text-sm text-orange-700 cursor-pointer">
+                        High Contrast Mode
+                      </Label>
+                      <Switch
+                        id="high-contrast"
+                        checked={highContrast}
+                        onCheckedChange={setHighContrast}
+                        className="data-[state=checked]:bg-orange-500"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Increases contrast for better visibility
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Data & Support - Collapsible */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => setIsDataSupportOpen(!isDataSupportOpen)}
+                  className="w-full flex items-center justify-between text-red-600 font-bold text-sm uppercase tracking-wide hover:bg-orange-50 p-2 -m-2 rounded transition-colors"
+                >
+                  <span>Data & Support</span>
+                  {isDataSupportOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+                {isDataSupportOpen && (
+                  <div className="space-y-3 pl-2">
+                    {/* Data Export Section */}
+                    <div className="space-y-3">
+                      <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Data Export</h4>
+                      <div className="p-3 bg-orange-50 rounded border border-orange-200">
+                        <DataExport 
+                          books={filteredAndLimitedBooks}
+                          authors={authors}
+                          readBooks={readBooks}
+                          wantToReadBooks={wantToReadBooks}
+                          dontWantBooks={dontWantBooks}
+                          userProfile={userState}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Help & Support Section */}
+                    <div className="space-y-3">
+                      <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Help & Support</h4>
+                      <div className="p-3 bg-blue-50 rounded border border-blue-200 space-y-2">
+                        <button
+                          onClick={() => {
+                            // Reset onboarding tour completion status
+                            if (currentUser) {
+                              localStorage.removeItem(`bookshelf_onboarding_seen_${currentUser}`)
+                            }
+                            setIsOnboardingTourActive(true)
+                            setShowSettingsDialog(false)
+                          }}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-md transition-colors font-medium"
+                        >
+                          <HelpCircle className="w-4 h-4" />
+                          Start Onboarding Tour
+                        </button>
+                        <p className="text-xs text-blue-600 mt-2 text-center">
+                          Take a guided tour to learn how to use all features
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAuthorsDialog} onOpenChange={setShowAuthorsDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto z-[51]">
+          <DialogHeader>
+            <DialogTitle>Authors & Books</DialogTitle>
+            <DialogDescription>
+              Add authors to your bookshelf. We'll automatically find all their books for you.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-4">
+            <AuthorManager
+              authors={authors}
+              setAuthors={setAuthors}
+              userId={currentUser || "guest"}
+              onBooksFound={onBooksFound}
+              onAuthorsChange={(newAuthors) => {
+                setAuthors(newAuthors)
+                if (currentUser) {
+                  localStorage.setItem(`authors_${currentUser}`, JSON.stringify(newAuthors))
+                }
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showFiltersDialog} onOpenChange={setShowFiltersDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Filters</DialogTitle>
+            <DialogDescription>
+              Filter your books by author, genre, date, and reading status.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-4">
+            <AdvancedFilters
+              filters={advancedFilters}
+              onFiltersChange={setAdvancedFilters}
+              books={books}
+              authors={authors.map(name => ({ id: name, name }))}
+              showHeartedBooks={showHeartedBooks}
+              setShowHeartedBooks={setShowHeartedBooks}
+              selectedAuthors={selectedAuthors}
+              setSelectedAuthors={setSelectedAuthors}
+              recommendedAuthors={recommendedAuthors}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Account Manager for Mobile - dialog only; trigger is in hamburger menu */}
+      {isMobileLayout && (
+        <div className="hidden">
+          <AccountManager 
+            user={user} 
+            isLoggedIn={isLoggedIn}
+            showAuthDialog={showAuthDialog}
+            onAuthDialogChange={setShowAuthDialog}
+          />
+        </div>
+      )}
+
+      {/* Guided onboarding tour (started from Settings > Start Onboarding Tour) */}
+      <OnboardingTour isActive={isOnboardingTourActive} onComplete={handleOnboardingTourComplete} />
+
+      {/* Contextual Tooltip Tour */}
+      <TooltipManager
+        isActive={isTooltipTourActive}
+        onComplete={() => {
+          setIsTooltipTourActive(false)
+          // Mark tour as seen for this user
+          if (currentUser) {
+            localStorage.setItem(`bookshelf_tour_seen_${currentUser}`, "true")
+          }
+        }}
+      />
+
+
+    </div>
+  )
+}
