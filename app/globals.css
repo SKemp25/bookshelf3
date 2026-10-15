@@ -99,3 +99,14 @@ html[data-text-size="large"] .tap-target,
 html[data-text-size="largest"] .tap-target {
   font-size: 0.875rem; /* lift the 12-point button text to match the chosen size */
 }
+
+/* Colour for newer components, set from the chosen colour theme (BookshelfClient) */
+:root { --theme-accent: #fb923c; }
+.theme-choice { border-color: #d1d5db; background: #fff; }
+.theme-choice:hover { border-color: #9ca3af; }
+.theme-choice[aria-checked="true"] {
+  border-color: var(--theme-accent);
+  background: color-mix(in srgb, var(--theme-accent) 10%, white);
+}
+.theme-check { background: var(--theme-accent); }
+.theme-prompt { border-color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 8%, white); }

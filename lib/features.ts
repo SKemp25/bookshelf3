@@ -18,11 +18,20 @@ export const features = {
   readDates: false,
   undoOnCards: false,
 
+  // How would you like MyBookshelf to help? (lib/usageMode.ts)
+  usageMode: true,
+
   // Step 2: everyday memory help
   haveIReadThis: false,
+  notePrompt: false,
   nextInSeries: false,
   recentlyViewed: false,
   addToHomeScreen: false,
+
+  // Most support
+  simplerScreens: false,
+  readAloud: false,
+  stickyConfirmations: false,
 
   // Step 3: the keepsake
   yearInBooks: false,
