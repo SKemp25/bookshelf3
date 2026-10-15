@@ -77,11 +77,18 @@ function mapOpenLibraryDocs(docs: any[] | undefined): NormalizedBook[] {
     const author = authors[0] || "Unknown Author"
     const workKey: string = typeof doc?.key === "string" ? doc.key : ""
     const coverId = doc?.cover_i
+    const isbn = Array.isArray(doc?.isbn) && typeof doc.isbn[0] === "string" ? doc.isbn[0] : ""
+    const coverEdition = typeof doc?.cover_edition_key === "string" ? doc.cover_edition_key : ""
+    // default=false makes Open Library return 404 (so the app shows its placeholder)
+    // instead of a blank 1x1 image when it has no cover
     const thumbnail =
       typeof coverId === "number"
         ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg`
-        : ""
-    const isbn = Array.isArray(doc?.isbn) && typeof doc.isbn[0] === "string" ? doc.isbn[0] : ""
+        : coverEdition
+          ? `https://covers.openlibrary.org/b/olid/${coverEdition}-L.jpg?default=false`
+          : isbn
+            ? `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`
+            : ""
     const publisher =
       Array.isArray(doc?.publisher) && typeof doc.publisher[0] === "string" ? doc.publisher[0] : ""
     const languages = asArrayStrings(doc?.language)
@@ -102,6 +109,60 @@ function mapOpenLibraryDocs(docs: any[] | undefined): NormalizedBook[] {
       categories: asArrayStrings(doc?.subject).slice(0, 20),
     }
   })
+}
+
+function mergeById(...lists: NormalizedBook[][]): NormalizedBook[] {
+  const seen = new Set<string>()
+  const merged: NormalizedBook[] = []
+  for (const list of lists) {
+    for (const book of list) {
+      if (seen.has(book.id)) continue
+      seen.add(book.id)
+      merged.push(book)
+    }
+  }
+  return merged
+}
+
+function newestFirst(books: NormalizedBook[]): NormalizedBook[] {
+  const year = (b: NormalizedBook) => parseInt(b.publishedDate, 10) || 0
+  return [...books].sort((a, b) => year(b) - year(a))
+}
+
+async function fetchGoogle(query: string, maxResults: number, orderBy: "relevance" | "newest"): Promise<NormalizedBook[] | null> {
+  const googleUrl = new URL("https://www.googleapis.com/books/v1/volumes")
+  googleUrl.searchParams.set("q", query)
+  googleUrl.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 40)))
+  googleUrl.searchParams.set("printType", "books")
+  googleUrl.searchParams.set("langRestrict", "en")
+  googleUrl.searchParams.set("orderBy", orderBy)
+  // Without a key Google Books shares a tiny anonymous quota and usually answers 429,
+  // which pushes every search onto the Open Library fallback (no descriptions, year-only dates).
+  const apiKey = process.env.GOOGLE_BOOKS_API_KEY
+  if (apiKey) googleUrl.searchParams.set("key", apiKey)
+
+  const resp = await fetch(googleUrl.toString(), { cache: "no-store" })
+  if (!resp.ok) return null
+  const data = await resp.json()
+  return mapGoogleItems(data?.items)
+}
+
+// Open Library search results carry no description; the work record does.
+async function fetchOpenLibraryDescription(workKey: string): Promise<string> {
+  if (!workKey.startsWith("/works/")) return ""
+  try {
+    const resp = await fetch(`https://openlibrary.org${workKey}.json`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(4000),
+    })
+    if (!resp.ok) return ""
+    const work = await resp.json()
+    if (typeof work?.description === "string") return work.description
+    if (typeof work?.description?.value === "string") return work.description.value
+  } catch {
+    // description is optional
+  }
+  return ""
 }
 
 export async function GET(request: NextRequest) {
@@ -126,16 +187,15 @@ export async function GET(request: NextRequest) {
 
   // 1) Try Google Books first (fast + rich metadata)
   try {
-    const googleUrl = new URL("https://www.googleapis.com/books/v1/volumes")
-    googleUrl.searchParams.set("q", googleQuery)
-    googleUrl.searchParams.set("maxResults", String(Math.min(Math.max(maxResults * 2, maxResults), 40)))
-    googleUrl.searchParams.set("printType", "books")
-    googleUrl.searchParams.set("langRestrict", "en")
-
-    const resp = await fetch(googleUrl.toString(), { cache: "no-store" })
-    if (resp.ok) {
-      const data = await resp.json()
-      const books = filterLibraryBooks(mapGoogleItems(data?.items)).slice(0, maxResults)
+    const relevant = await fetchGoogle(googleQuery, maxResults * 2, "relevance")
+    if (relevant) {
+      // Relevance ranking buries new releases behind older editions, so for
+      // author lookups also ask for the newest titles and merge them in.
+      const newest = author && !title && !q ? (await fetchGoogle(googleQuery, 20, "newest")) || [] : []
+      const books = mergeById(
+        filterLibraryBooks(relevant).slice(0, maxResults),
+        filterLibraryBooks(newest).slice(0, 10),
+      )
       if (books.length > 0) return NextResponse.json(books)
     }
 
@@ -161,7 +221,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([], { status: 200 })
     }
     const data = await resp.json()
-    const books = filterLibraryBooks(mapOpenLibraryDocs(data?.docs)).slice(0, maxResults)
+    // Newest first before trimming, so recent books are not cut off the list
+    const books = newestFirst(filterLibraryBooks(mapOpenLibraryDocs(data?.docs))).slice(0, maxResults)
+    const descriptions = await Promise.all(
+      books.map((book) => fetchOpenLibraryDescription(book.id.replace(/^OL/, ""))),
+    )
+    books.forEach((book, i) => {
+      book.description = descriptions[i]
+    })
     return NextResponse.json(books, { status: 200 })
   } catch {
     return NextResponse.json([], { status: 200 })

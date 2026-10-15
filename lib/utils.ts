@@ -26,6 +26,58 @@ export function cn(...inputs: (string | undefined | null | boolean | Record<stri
     .trim()
 }
 
+// Normalize a title so different editions of the same book match:
+// strips series numbers, edition notes, punctuation and a leading article
+// (so "Song of Achilles" and "The Song of Achilles" are one book)
+export function normalizeTitleForGrouping(title: string): string {
+  return title
+    .toLowerCase()
+    // Remove series information (e.g., ": CORMORAN STRIKE BOOK 7", "BOOK 1", etc.)
+    .replace(/:\s*(book|novel|volume|vol\.?)\s*\d+/gi, "")
+    .replace(/\s*\(book\s*\d+\)/gi, "")
+    .replace(/\s*\[book\s*\d+\]/gi, "")
+    // Remove common subtitle separators and everything after them if they indicate series
+    .replace(/:\s*[^:]+(?:book|novel|volume|vol\.?)\s*\d+/gi, "")
+    // Remove edition indicators from title
+    .replace(/\s*\(.*edition.*\)/gi, "")
+    .replace(/\s*\[.*edition.*\]/gi, "")
+    // Normalize punctuation and whitespace
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(the|a|an) /, "")
+}
+
+// Read/want/pass marks and ratings are keyed by "title-author". When two
+// editions merge into one card, move marks from the dropped edition's key to
+// the surviving card's key so nothing the reader marked is lost.
+export function remapMergedBookIds<T>(entries: Map<string, T>, books: any[]): Map<string, T> {
+  const currentIds = new Set(books.map((b) => `${b.title}-${b.author}`))
+  let changed = false
+  const result = new Map<string, T>()
+  for (const [id, value] of entries) {
+    if (currentIds.has(id)) {
+      if (!result.has(id)) result.set(id, value)
+      continue
+    }
+    const match = books.find((b) => {
+      const suffix = `-${b.author}`
+      return (
+        id.endsWith(suffix) &&
+        normalizeTitleForGrouping(id.slice(0, -suffix.length)) === normalizeTitleForGrouping(b.title || "")
+      )
+    })
+    if (match) {
+      const newId = `${match.title}-${match.author}`
+      if (!result.has(newId)) result.set(newId, value)
+      changed = true
+    } else {
+      result.set(id, value)
+    }
+  }
+  return changed ? result : entries
+}
+
 export function deduplicateBooks(books: any[], userCountry: string = "US") {
   const bookGroups = new Map<string, any[]>()
 
@@ -107,27 +159,9 @@ export function deduplicateBooks(books: any[], userCountry: string = "US") {
       return
     }
 
-    // Create unique key from normalized title and author (without publication year to group all editions)
-    // Strip out series information, subtitles, and edition indicators
-    let normalizedTitle = title
-      // Remove series information (e.g., ": CORMORAN STRIKE BOOK 7", "BOOK 1", etc.)
-      .replace(/:\s*(book|novel|volume|vol\.?)\s*\d+/gi, "")
-      .replace(/\s*\(book\s*\d+\)/gi, "")
-      .replace(/\s*\[book\s*\d+\]/gi, "")
-      // Remove common subtitle separators and everything after them if they indicate series
-      .replace(/:\s*[^:]+(?:book|novel|volume|vol\.?)\s*\d+/gi, "")
-      // Remove edition indicators from title
-      .replace(/\s*\(.*edition.*\)/gi, "")
-      .replace(/\s*\[.*edition.*\]/gi, "")
-      // Normalize punctuation and whitespace
-      .replace(/[^\w\s]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase()
-    
+    // Group all editions of the same book together (no publication year in the key)
     const author = (book.authors?.[0] || book.author || "unknown").toLowerCase().trim()
-    // Don't include publication year in key - we want to group all editions together
-    const key = `${normalizedTitle}|${author}`
+    const key = `${normalizeTitleForGrouping(book.title || "")}|${author}`
 
     if (!bookGroups.has(key)) {
       bookGroups.set(key, [])
@@ -262,8 +296,15 @@ export function deduplicateBooks(books: any[], userCountry: string = "US") {
       return 0
     })
 
-    // Take the best book (first in sorted array)
-    result.push(sortedBooks[0])
+    // Take the best book (first in sorted array), filling any missing
+    // description, cover or page count from the other copies of the same book
+    const best = { ...sortedBooks[0] }
+    for (const other of sortedBooks.slice(1)) {
+      if (!best.description && other.description) best.description = other.description
+      if (!best.thumbnail && other.thumbnail) best.thumbnail = other.thumbnail
+      if (!best.pageCount && other.pageCount) best.pageCount = other.pageCount
+    }
+    result.push(best)
   })
 
   return result
