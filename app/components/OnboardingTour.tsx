@@ -17,7 +17,7 @@ const onboardingSteps: OnboardingStep[] = [
     selector: "[data-onboarding='settings']",
     title: "Step 1: Add Your Favorite Authors",
     content: "Click the Settings button, then select 'Authors & Books' to add authors you love. We'll automatically find all their books for you! You can add multiple authors to build your collection.",
-    position: "bottom"
+    position: "top"
   },
   {
     id: "search",
@@ -52,7 +52,7 @@ const onboardingSteps: OnboardingStep[] = [
     selector: "[data-onboarding='settings']",
     title: "Step 6: Customize Your Experience",
     content: "Access Settings to customize your preferences, manage your authors, export your data, and access this tour again anytime.",
-    position: "bottom"
+    position: "top"
   },
   {
     id: "complete",
@@ -94,10 +94,11 @@ export default function OnboardingTour({ isActive, onComplete, userId }: Onboard
       }
 
       const step = onboardingSteps[currentStep]
-      let element = document.querySelector(step.selector) as HTMLElement
-      
-      // No special handling needed - we're now targeting the Settings button directly for authors step
-      
+      // Pick the first matching element that is actually on screen (some controls only show on larger screens)
+      const element = Array.from(document.querySelectorAll<HTMLElement>(step.selector)).find(
+        (el) => el.getClientRects().length > 0
+      )
+
       if (element && isMounted) {
         setTargetElement(element)
         setIsVisible(true)
@@ -138,9 +139,11 @@ export default function OnboardingTour({ isActive, onComplete, userId }: Onboard
             if (isMounted) {
               showNextTooltip(attempt + 1)
             }
-          }, 1000)
+          }, 500)
         } else {
+          // Skip steps whose target isn't on screen so the tour never gets stuck
           console.warn(`Onboarding tour: Element not found for step ${currentStep + 1}: ${step.selector}`)
+          setCurrentStep(prev => prev + 1)
         }
       }
     }
@@ -190,6 +193,10 @@ export default function OnboardingTour({ isActive, onComplete, userId }: Onboard
   const isFirstStep = currentStep === 0
   const isLastStep = currentStep === onboardingSteps.length - 1
   const stepNumber = currentStep + 1 // Display step number (1-based)
+  const targetRect = targetElement?.getBoundingClientRect()
+  const controlsAtTop = targetRect
+    ? targetRect.top + targetRect.height / 2 > window.innerHeight / 2
+    : currentStepData.position === "top"
 
   return (
     <>
@@ -205,7 +212,12 @@ export default function OnboardingTour({ isActive, onComplete, userId }: Onboard
       {/* Overlay with navigation buttons */}
       {isVisible && (
         <div className="fixed inset-0 z-40 bg-black bg-opacity-30">
-          <div className="absolute bottom-24 md:bottom-32 left-1/2 transform -translate-x-1/2 z-50">
+          <div
+            className={`absolute left-1/2 transform -translate-x-1/2 z-50 ${
+              // Keep the controls out of the tooltip's way: put them in the half of the screen away from the target
+              controlsAtTop ? "top-24 md:top-32" : "bottom-24 md:bottom-32"
+            }`}
+          >
             <div className="bg-white rounded-lg shadow-xl p-4 border-2 border-orange-500 max-w-sm mx-4">
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
