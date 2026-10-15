@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react"
 import AccountManager from "./AccountManager"
 import AuthorManager from "./AuthorManager"
 import BookGrid from "./BookGrid"
+import TextSizePicker from "./TextSizePicker"
 import BookFilters from "./BookFilters"
 import AdvancedFilters from "./AdvancedFilters"
 import { defaultAdvancedFilters } from "@/lib/types"
@@ -2583,6 +2584,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                         <div className="space-y-3">
                           <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Display Settings</h4>
                     
+                    <TextSizePicker />
+
                     {/* Color Theme Selector */}
                     <div className="space-y-2">
                       <Label className="text-sm text-orange-700">Color Theme</Label>
@@ -3133,6 +3136,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                 </button>
                 {isDisplaySettingsOpen && (
                   <div className="space-y-3 pl-2">
+                    <TextSizePicker />
+
                     {/* Color Theme Selection */}
                     <div className="space-y-3">
                       <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Color Theme</h4>

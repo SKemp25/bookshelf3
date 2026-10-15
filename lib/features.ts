@@ -14,7 +14,7 @@
  */
 export const features = {
   // Step 1: calm foundations and read dates
-  largerButtonsAndText: false,
+  largerButtonsAndText: true,
   readDates: false,
   undoOnCards: false,
 

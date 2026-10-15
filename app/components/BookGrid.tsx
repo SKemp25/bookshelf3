@@ -831,7 +831,7 @@ export default function BookGrid({
                               handleMarkAsRead(bookId, book.title, getAuthorName(book))
                             }}
                             disabled={isBookUpdating}
-                            className="flex-1 h-8 text-xs font-bold border-2 border-gray-400 text-gray-800 hover:bg-orange-50 bg-white"
+                            className="flex-1 tap-target h-8 text-xs font-bold border-2 border-gray-400 text-gray-800 hover:bg-orange-50 bg-white"
                           >
                             <BookCheck className="w-3 h-3 mr-1" />
                             Read
@@ -844,7 +844,7 @@ export default function BookGrid({
                               onMarkAsWant(bookId, book.title, getAuthorName(book))
                             }}
                             disabled={isBookUpdating}
-                            className="flex-1 h-8 text-xs font-bold border-2 border-blue-400 text-blue-800 hover:bg-blue-50 bg-white"
+                            className="flex-1 tap-target h-8 text-xs font-bold border-2 border-blue-400 text-blue-800 hover:bg-blue-50 bg-white"
                           >
                             <BookmarkPlus className="w-3 h-3 mr-1" />
                             Want
@@ -857,7 +857,7 @@ export default function BookGrid({
                               onToggleDontWant(bookId, book.title, getAuthorName(book))
                             }}
                             disabled={isBookUpdating}
-                            className={`flex-1 h-8 text-xs font-bold border-2 bg-white ${
+                            className={`flex-1 tap-target h-8 text-xs font-bold border-2 bg-white ${
                               status === "pass"
                                 ? "border-red-500 text-red-800 hover:bg-red-50"
                                 : "border-gray-400 text-gray-800 hover:bg-gray-50"
@@ -1114,7 +1114,7 @@ export default function BookGrid({
                         size="sm"
                         onClick={() => handleMarkAsRead(bookId, book.title, getAuthorName(book))}
                         disabled={isBookUpdating}
-                          className="h-8 px-2 md:px-3 text-xs font-bold border-2 border-gray-400 text-gray-800 hover:bg-orange-50 bg-white flex-shrink-0"
+                          className="tap-target h-8 px-2 md:px-3 text-xs font-bold border-2 border-gray-400 text-gray-800 hover:bg-orange-50 bg-white flex-shrink-0"
                           title="Mark as read"
                       >
                         <BookCheck className="w-3 h-3 mr-1 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
@@ -1125,7 +1125,7 @@ export default function BookGrid({
                         size="sm"
                         onClick={() => handleMarkAsWant(bookId, book.title, getAuthorName(book))}
                         disabled={isBookUpdating}
-                        className={`h-8 px-2 md:px-3 text-xs font-bold border-2 flex-shrink-0 ${
+                        className={`tap-target h-8 px-2 md:px-3 text-xs font-bold border-2 flex-shrink-0 ${
                           status === "want"
                             ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
                             : "border-gray-400 text-gray-800 hover:bg-orange-50 bg-white"
@@ -1140,7 +1140,7 @@ export default function BookGrid({
                         size="sm"
                         onClick={() => handleToggleDontWant(bookId, book.title, getAuthorName(book))}
                         disabled={isBookUpdating}
-                        className={`h-8 px-2 md:px-3 text-xs font-bold border-2 flex-shrink-0 ${
+                        className={`tap-target h-8 px-2 md:px-3 text-xs font-bold border-2 flex-shrink-0 ${
                           status === "pass"
                             ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
                             : "border-gray-400 text-gray-800 hover:bg-orange-50 bg-white"
@@ -1165,7 +1165,7 @@ export default function BookGrid({
                               variant="outline"
                               size="sm"
                               onClick={() => openPlatformLink(book, platform)}
-                              className="border-2 border-black text-black hover:bg-orange-50 bg-white text-xs font-bold h-8 px-3"
+                              className="border-2 border-black text-black hover:bg-orange-50 bg-white text-xs font-bold tap-target h-8 px-3"
                             >
                               {platform.name === "Kindle" && (
                                 <BookCheck className="w-3 h-3 mr-1 drop-shadow-[0_0_1px_rgba(0,0,0,0.8)]" />
@@ -1225,7 +1225,7 @@ export default function BookGrid({
                               e.stopPropagation()
                                 setShowSeriesForBookId(showSeriesForBookId === book.id ? null : book.id)
                             }}
-                              className="border-2 border-blue-500 text-blue-700 hover:bg-blue-50 bg-white text-xs font-bold h-8 px-3"
+                              className="border-2 border-blue-500 text-blue-700 hover:bg-blue-50 bg-white text-xs font-bold tap-target h-8 px-3"
                           >
                               <List className="w-3 h-3 mr-1" />
                               {showSeriesForBookId === book.id ? "Hide" : "Show"} Series ({seriesBooks.length} books)

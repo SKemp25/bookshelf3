@@ -88,3 +88,14 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Text and button size setting (lib/textSize.ts). Only applies once a size
+   has been chosen or defaulted, i.e. when its feature switch is on. */
+html[data-text-size] .tap-target {
+  height: auto;
+  min-height: 2.75rem; /* at least Apple's 44-point tap size, larger at bigger settings */
+}
+html[data-text-size="large"] .tap-target,
+html[data-text-size="largest"] .tap-target {
+  font-size: 0.875rem; /* lift the 12-point button text to match the chosen size */
+}
