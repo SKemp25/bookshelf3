@@ -93,6 +93,28 @@ function authorNamesMatch(a: string, b: string): boolean {
   return wordsA.every((w, i) => w === wordsB[i])
 }
 
+/** Key that treats case, punctuation and "Last, First" order as the same author. */
+function authorGroupKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[,.]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 0)
+    .sort()
+    .join(" ")
+}
+
+/** Most common "First Last" spelling among a group's variants. */
+function pickDisplayName(counts: Map<string, number>): string {
+  const entries = Array.from(counts.entries()).sort((a, b) => {
+    const aComma = a[0].includes(",") ? 1 : 0
+    const bComma = b[0].includes(",") ? 1 : 0
+    if (aComma !== bComma) return aComma - bComma
+    return b[1] - a[1]
+  })
+  return entries[0][0]
+}
+
 export default function AuthorManager({ authors, setAuthors, onBooksFound, onAuthorsChange, userId }: AuthorManagerProps) {
   const [newAuthor, setNewAuthor] = useState("")
   const [searchTitle, setSearchTitle] = useState("")
@@ -170,29 +192,31 @@ export default function AuthorManager({ authors, setAuthors, onBooksFound, onAut
           return false
         })
         
-        // Group books by author name to detect multiple authors with same name
-        // Only include books where the author field matches, not where name appears in title
+        // Group books by author so the picker only appears for genuinely different names.
+        // Spelling/case variants ("Barbara Kingsolver", "BARBARA KINGSOLVER", "Kingsolver, Barbara")
+        // share one key and are merged into a single author.
         const authorGroups = new Map<string, Book[]>()
-        
+        const variantCounts = new Map<string, Map<string, number>>()
+
         validBooks.forEach((item: any) => {
           const apiAuthor = item.volumeInfo?.authors?.[0] || item.author || ""
           if (!apiAuthor) return
-          
-          const normalizedApiAuthor = normalizeAuthorName(apiAuthor)
-          const normalizedApiAuthorLower = normalizedApiAuthor.toLowerCase()
-          
-          // Only group books where the author field actually matches (already filtered by validBooks)
-          // Group by the exact author name from the author field
-          if (!authorGroups.has(normalizedApiAuthor)) {
-            authorGroups.set(normalizedApiAuthor, [])
+
+          const key = authorGroupKey(apiAuthor)
+          if (!authorGroups.has(key)) {
+            authorGroups.set(key, [])
+            variantCounts.set(key, new Map())
           }
-          authorGroups.get(normalizedApiAuthor)!.push(item)
+          authorGroups.get(key)!.push(item)
+          const display = normalizeAuthorName(apiAuthor)
+          const counts = variantCounts.get(key)!
+          counts.set(display, (counts.get(display) || 0) + 1)
         })
-        
+
         // If multiple distinct authors found, show verification dialog WITHOUT adding author yet
         if (authorGroups.size > 1) {
-          const candidates = Array.from(authorGroups.entries()).map(([name, books]) => ({
-            name,
+          const candidates = Array.from(authorGroups.entries()).map(([key, books]) => ({
+            name: pickDisplayName(variantCounts.get(key)!),
             sampleBooks: books.slice(0, 3),
             allBooks: books, // Store all books for this candidate
             bookCount: books.length
@@ -631,7 +655,10 @@ export default function AuthorManager({ authors, setAuthors, onBooksFound, onAut
           setPendingAuthorName("")
         }
       }}>
-        <DialogContent className="sm:max-w-2xl bg-white border-orange-200 rounded-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent
+          className="sm:max-w-2xl bg-white border-orange-200 rounded-2xl max-h-[80vh] overflow-y-auto z-[60]"
+          overlayClassName="z-[60]"
+        >
           <DialogHeader>
             <DialogTitle className="text-orange-800 font-display text-xl">Multiple Authors Found</DialogTitle>
             <DialogDescription>
@@ -764,7 +791,7 @@ export default function AuthorManager({ authors, setAuthors, onBooksFound, onAut
 
       {/* Import Dialog */}
       <Dialog open={showImport} onOpenChange={setShowImport}>
-        <DialogContent className="sm:max-w-md bg-white border-orange-200 rounded-2xl">
+        <DialogContent className="sm:max-w-md bg-white border-orange-200 rounded-2xl z-[60]" overlayClassName="z-[60]">
           <DialogHeader>
             <DialogTitle className="text-orange-800 font-display text-xl">Import Authors</DialogTitle>
           </DialogHeader>
