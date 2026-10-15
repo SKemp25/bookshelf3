@@ -41,9 +41,6 @@ export default function UsageModeChoices({ selected, onChoose, layout = "row" }:
                 <li key={item}>{item}</li>
               ))}
             </ul>
-            <span className="mt-auto border-t border-gray-200 pt-2 text-sm text-gray-600">
-              {mode.textSize === "standard" ? "Standard" : mode.textSize === "large" ? "Large" : "Largest"} text size
-            </span>
           </button>
         )
       })}

@@ -2,19 +2,17 @@
  * "How would you like MyBookshelf to help?"
  *
  * Each choice is described by what the app does, never by a diagnosis, and
- * turns on a layer of memory tools plus a text size. Each tool still has its
+ * turns on a layer of memory tools. Text size is a separate setting. Each tool still has its
  * own switch in lib/features.ts, so a tool only appears once it is built and
  * switched on there AND the person's choice includes it.
  */
 import { features, type FeatureName } from "./features.ts"
-import type { TextSize } from "./textSize.ts"
 
 export const USAGE_MODES = {
   record: {
     title: "Keep a clear record of my reading",
     includes: null,
     items: ["Your shelf, authors and wish list", "Read dates, to the day or month", "Your Year in Books"],
-    textSize: "standard",
   },
   remember: {
     title: "Help me remember what I've read",
@@ -24,7 +22,6 @@ export const USAGE_MODES = {
       "A prompt to add a note when you finish a book",
       "Where you left off, and what's next in a series",
     ],
-    textSize: "large",
   },
   support: {
     title: "Give me the most support",
@@ -34,15 +31,14 @@ export const USAGE_MODES = {
       "Descriptions read aloud",
       "Confirmations that stay on screen until you close them",
     ],
-    textSize: "largest",
   },
-} as const satisfies Record<string, { title: string; includes: string | null; items: readonly string[]; textSize: TextSize }>
+} as const satisfies Record<string, { title: string; includes: string | null; items: readonly string[] }>
 
 export type UsageMode = keyof typeof USAGE_MODES
 
 const MODE_ORDER: UsageMode[] = ["record", "remember", "support"]
 
-/** Used until someone chooses; matches the Large text the app starts on. */
+/** Used until someone chooses. */
 export const DEFAULT_USAGE_MODE: UsageMode = "remember"
 export const USAGE_MODE_STORAGE_KEY = "bookshelf_usage_mode"
 export const USAGE_PROMPT_DISMISSED_KEY = "bookshelf_usage_prompt_dismissed"
