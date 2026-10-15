@@ -5,6 +5,8 @@ import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
 import ErrorBoundary from "./components/ErrorBoundary"
+import { isFeatureOn } from "@/lib/features"
+import { textSizeBootScript } from "@/lib/textSize"
 
 export const metadata: Metadata = {
   title: "My Bookcase - Personal Reading Tracker",
@@ -26,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="antialiased">
+    <html lang="en" className="antialiased" suppressHydrationWarning>
       <head>
         <style>{`
 html {
@@ -35,6 +37,9 @@ html {
   --font-mono: ${GeistMono.variable};
 }
         `}</style>
+        {isFeatureOn("largerButtonsAndText") && (
+          <script dangerouslySetInnerHTML={{ __html: textSizeBootScript() }} />
+        )}
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#ea580c" />
         <meta name="mobile-web-app-capable" content="yes" />

@@ -1,0 +1,34 @@
+# How to undo changes
+
+There are three ways to undo, from smallest to biggest. None of them deletes anyone's saved books.
+
+## 1. Turn one feature off
+
+1. On GitHub, open `lib/features.ts` in this repository.
+2. Click the pencil icon to edit.
+3. Change the feature's `true` to `false`.
+4. Click **Commit changes**.
+
+Vercel republishes the app a minute or two later with that feature hidden. Change it back to `true` the same way to bring it back.
+
+## 2. Remove one feature completely
+
+Every feature arrives as its own pull request.
+
+1. On GitHub, open **Pull requests**, then **Closed**, and find the feature's pull request.
+2. Click **Revert** near the bottom of the page. GitHub opens a new pull request that removes it.
+3. Merge that new pull request.
+
+The other features stay in place.
+
+## 3. Put the whole app back to a stable point
+
+The branch `stable-2026-10-15` holds the app exactly as it was on October 15, 2026, before any of the design features were added.
+
+**Fastest (for an emergency):** in Vercel, open the project **my-bookshelf-v3**, then **Deployments**. Find an earlier deployment that worked, open its **...** menu and choose **Promote to Production** (Vercel may call this **Instant Rollback**). The live site switches back right away. The next merge to `main` publishes again on top of it.
+
+**Permanent:** ask Claude to reset `main` to the `stable-2026-10-15` branch through a pull request, so the code itself goes back.
+
+## Saved books are always kept
+
+New information, such as read dates, is stored next to what is already saved and never replaces it. Turning a feature off or reverting it hides that information; it does not erase it.
