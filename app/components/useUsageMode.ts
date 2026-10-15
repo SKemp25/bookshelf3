@@ -1,8 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { applyTextSize } from "@/lib/textSize"
-import { USAGE_MODES, USAGE_MODE_STORAGE_KEY, normalizeUsageMode, type UsageMode } from "@/lib/usageMode"
+import { USAGE_MODE_STORAGE_KEY, normalizeUsageMode, type UsageMode } from "@/lib/usageMode"
 
 const CHANGED_EVENT = "bookshelf:usage-mode-changed"
 
@@ -23,8 +22,6 @@ export function useUsageMode() {
     try {
       localStorage.setItem(USAGE_MODE_STORAGE_KEY, next)
     } catch {}
-    // Each choice comes with a text size; it can still be changed separately afterwards
-    applyTextSize(USAGE_MODES[next].textSize)
     window.dispatchEvent(new CustomEvent(CHANGED_EVENT, { detail: next }))
   }, [])
 

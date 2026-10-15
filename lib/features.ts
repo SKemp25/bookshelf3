@@ -19,7 +19,8 @@ export const features = {
   undoOnCards: false,
 
   // How would you like MyBookshelf to help? (lib/usageMode.ts)
-  usageMode: true,
+  // Off until the first memory tools it turns on are built
+  usageMode: false,
 
   // Step 2: everyday memory help
   haveIReadThis: false,

@@ -13,7 +13,7 @@ export default function UsageModeSetting() {
     <fieldset className="space-y-2">
       <legend className="mb-2 text-base font-bold text-gray-900">How MyBookshelf helps</legend>
       <UsageModeChoices selected={mode} onChoose={choose} layout="stacked" />
-      <p className="text-sm text-gray-600">Choosing one also sets the text size. You can change either at any time.</p>
+      <p className="text-sm text-gray-600">You can change this at any time.</p>
     </fieldset>
   )
 }
