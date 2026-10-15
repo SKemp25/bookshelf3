@@ -37,7 +37,7 @@ export default function UsageModePrompt() {
 
   return (
     <>
-      <section className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-teal-700 bg-teal-50 p-4">
+      <section className="mb-4 flex flex-wrap items-center justify-between gap-3 theme-prompt rounded-2xl border-2 p-4">
         <div className="min-w-0">
           <h2 className="text-lg font-bold text-gray-900">How would you like MyBookshelf to help?</h2>
           <p className="text-base text-gray-700">Choose the level of help that suits you. You can change it later in Settings.</p>
@@ -46,7 +46,7 @@ export default function UsageModePrompt() {
           <Button variant="ghost" className="tap-target text-base font-bold text-gray-700" onClick={notNow}>
             Not now
           </Button>
-          <Button className="tap-target bg-teal-700 text-base font-bold text-white hover:bg-teal-800" onClick={() => setOpen(true)}>
+          <Button className="tap-target bg-gray-900 text-base font-bold text-white hover:bg-black" onClick={() => setOpen(true)}>
             Choose
           </Button>
         </div>
@@ -66,7 +66,7 @@ export default function UsageModePrompt() {
               Decide later
             </Button>
             <Button
-              className="tap-target bg-teal-700 text-base font-bold text-white hover:bg-teal-800"
+              className="tap-target bg-gray-900 text-base font-bold text-white hover:bg-black"
               disabled={!pending}
               onClick={() => {
                 if (pending) choose(pending)

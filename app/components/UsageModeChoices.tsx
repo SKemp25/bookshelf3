@@ -27,12 +27,10 @@ export default function UsageModeChoices({ selected, onChoose, layout = "row" }:
             role="radio"
             aria-checked={isSelected}
             onClick={() => onChoose(key)}
-            className={`tap-target relative flex flex-col gap-2 rounded-2xl border-2 p-4 text-left transition-colors ${
-              isSelected ? "border-teal-700 bg-teal-50" : "border-gray-300 bg-white hover:border-gray-400"
-            }`}
+            className="theme-choice tap-target relative flex flex-col gap-2 rounded-2xl border-2 p-4 text-left transition-colors"
           >
             {isSelected && (
-              <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-teal-700 text-white">
+              <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center theme-check rounded-full text-white">
                 <Check className="h-4 w-4" aria-hidden="true" />
               </span>
             )}

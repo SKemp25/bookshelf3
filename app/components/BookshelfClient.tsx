@@ -587,6 +587,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('bookshelf_color_theme', colorTheme)
+      // Lets newer components (and dialogs, which render outside this tree) follow the chosen colour theme
+      document.documentElement.style.setProperty('--theme-accent', (colorThemes[colorTheme] || colorThemes.orange).footerColor)
     }
   }, [colorTheme])
 

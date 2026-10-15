@@ -47,9 +47,7 @@ export default function TextSizePicker() {
               role="radio"
               aria-checked={selected}
               onClick={() => choose(key)}
-              className={`tap-target flex flex-col items-center justify-center gap-1 rounded-xl border-2 px-2 py-3 transition-colors ${
-                selected ? "border-teal-700 bg-teal-50 text-teal-900" : "border-gray-300 bg-white text-gray-800 hover:border-gray-400"
-              }`}
+              className="theme-choice tap-target flex flex-col items-center justify-center gap-1 rounded-xl border-2 px-2 py-3 text-gray-900 transition-colors"
             >
               <span aria-hidden="true" className="font-bold leading-none" style={{ fontSize: `${1.1 + i * 0.35}rem` }}>
                 Aa
