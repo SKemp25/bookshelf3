@@ -5,6 +5,8 @@ import AccountManager from "./AccountManager"
 import AuthorManager from "./AuthorManager"
 import BookGrid from "./BookGrid"
 import TextSizePicker from "./TextSizePicker"
+import UsageModePrompt from "./UsageModePrompt"
+import UsageModeSetting from "./UsageModeSetting"
 import BookFilters from "./BookFilters"
 import AdvancedFilters from "./AdvancedFilters"
 import { defaultAdvancedFilters } from "@/lib/types"
@@ -1560,6 +1562,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
       <div className="flex flex-1 overflow-hidden relative">
         {/* Main Content - Book Grid */}
         <main className="flex-1 px-4 md:px-6 py-6 overflow-y-auto" style={{ maxHeight: isMobileLayout ? 'calc(100vh - 180px)' : 'calc(100vh - 140px)' }}>
+          {isLoggedIn && <UsageModePrompt />}
+
           {/* Reading Progress */}
           <div className="mb-4 flex items-center justify-between">
             <div className="bg-white border-2 border-black rounded-lg px-3 py-1">
@@ -2584,6 +2588,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                         <div className="space-y-3">
                           <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Display Settings</h4>
                     
+                    <UsageModeSetting />
+
                     <TextSizePicker />
 
                     {/* Color Theme Selector */}
@@ -3136,6 +3142,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                 </button>
                 {isDisplaySettingsOpen && (
                   <div className="space-y-3 pl-2">
+                    <UsageModeSetting />
+
                     <TextSizePicker />
 
                     {/* Color Theme Selection */}

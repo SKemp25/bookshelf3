@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { isFeatureOn } from "@/lib/features"
 import {
   TEXT_SIZES,
+  TEXT_SIZE_CHANGED_EVENT,
   TEXT_SIZE_STORAGE_KEY,
   applyTextSize,
   normalizeTextSize,
@@ -20,6 +21,10 @@ export default function TextSizePicker() {
       saved = localStorage.getItem(TEXT_SIZE_STORAGE_KEY)
     } catch {}
     setSize(normalizeTextSize(saved))
+    // Choosing how MyBookshelf helps also sets the size, so follow changes made elsewhere
+    const onChange = (e: Event) => setSize(normalizeTextSize((e as CustomEvent).detail))
+    window.addEventListener(TEXT_SIZE_CHANGED_EVENT, onChange)
+    return () => window.removeEventListener(TEXT_SIZE_CHANGED_EVENT, onChange)
   }, [])
 
   if (!isFeatureOn("largerButtonsAndText")) return null

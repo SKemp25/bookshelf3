@@ -15,6 +15,7 @@ export type TextSize = keyof typeof TEXT_SIZES
 
 export const DEFAULT_TEXT_SIZE: TextSize = "large"
 export const TEXT_SIZE_STORAGE_KEY = "bookshelf_text_size"
+export const TEXT_SIZE_CHANGED_EVENT = "bookshelf:text-size-changed"
 
 export function normalizeTextSize(value: unknown): TextSize {
   return typeof value === "string" && value in TEXT_SIZES ? (value as TextSize) : DEFAULT_TEXT_SIZE
@@ -35,6 +36,7 @@ export function applyTextSize(size: TextSize): void {
   const root = document.documentElement
   root.dataset.textSize = size
   root.style.fontSize = `${TEXT_SIZES[size].rootPercent}%`
+  window.dispatchEvent(new CustomEvent(TEXT_SIZE_CHANGED_EVENT, { detail: size }))
   try {
     localStorage.setItem(TEXT_SIZE_STORAGE_KEY, size)
   } catch {

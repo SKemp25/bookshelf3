@@ -10,7 +10,7 @@
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
-    "test": "node --experimental-strip-types --test lib/libraryFilters.test.ts lib/features.test.ts lib/textSize.test.ts"
+    "test": "node --experimental-strip-types --test lib/libraryFilters.test.ts lib/features.test.ts lib/textSize.test.ts lib/usageMode.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
