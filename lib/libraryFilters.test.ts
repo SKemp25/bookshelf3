@@ -4,6 +4,7 @@ import {
   filterLibraryBooks,
   isAllowedLibraryBook,
   isArchivalRecord,
+  isPlaceholderTitle,
   isLikelyDifferentAuthor,
   isEnglishLanguage,
   isRerelease,
@@ -157,5 +158,18 @@ describe("namesakes and archival records", () => {
     assert.equal(isArchivalRecord(deeds), true)
     assert.equal(isAllowedLibraryBook(deeds), false)
     assert.equal(isArchivalRecord({ title: "Pride and Prejudice", author: "Jane Austen", publishedDate: "1813" }), false)
+  })
+})
+
+describe("placeholder titles", () => {
+  it("hides books announced without a name", () => {
+    assert.equal(isPlaceholderTitle({ title: "Untitled" }), true)
+    assert.equal(isPlaceholderTitle({ title: "Untitled Rebus Novel" }), true)
+    assert.equal(isAllowedLibraryBook({ title: "Untitled", author: "Ian Rankin" }), false)
+  })
+
+  it("keeps real titles that contain the word", () => {
+    assert.equal(isPlaceholderTitle({ title: "The Untitled Life" }), false)
+    assert.equal(isPlaceholderTitle({ title: "Midnight and Blue" }), false)
   })
 })
