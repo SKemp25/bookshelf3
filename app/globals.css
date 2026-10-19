@@ -111,3 +111,136 @@ html[data-text-size="largest"] .tap-target {
 .theme-check { background: var(--theme-accent); }
 .theme-prompt { border-color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 8%, white); }
 .theme-bar { border-color: var(--theme-accent); }
+
+/* ------------------------------------------------------------------
+   New look (Step 4): Daytime and Evening, with one accent colour.
+   Only active when the `newLook` switch is on: the boot script in
+   lib/look.ts then sets data-look on <html> and the --nl-* colours.
+   The rules below also re-colour the older components' plain greys,
+   whites and oranges so every screen and dialog follows the look.
+   ------------------------------------------------------------------ */
+html[data-look] {
+  font-family: var(--nl-sans), "Atkinson Hyperlegible", system-ui, sans-serif;
+  color: var(--nl-ink);
+  background: var(--nl-bg);
+  color-scheme: light;
+}
+html[data-look="evening"] { color-scheme: dark; }
+html[data-look] body { background: var(--nl-bg); color: var(--nl-ink); }
+
+.nl-serif, html[data-look] [role="dialog"] h2 { font-family: var(--nl-serif), Georgia, serif; font-weight: 600; letter-spacing: -0.01em; }
+
+/* Plain colours used across the older components */
+html[data-look] .bg-white { background-color: var(--nl-card); }
+html[data-look] .bg-gray-50,
+html[data-look] .bg-gray-100,
+html[data-look] .bg-orange-50,
+html[data-look] .bg-orange-100,
+html[data-look] .bg-blue-50 { background-color: var(--nl-raised); }
+html[data-look] .bg-gray-200 { background-color: var(--nl-line-soft); }
+html[data-look] .text-black,
+html[data-look] .text-gray-900,
+html[data-look] .text-gray-800,
+html[data-look] .text-orange-900 { color: var(--nl-ink); }
+html[data-look] .text-gray-700,
+html[data-look] .text-gray-600,
+html[data-look] .text-gray-500,
+html[data-look] .text-gray-400 { color: var(--nl-soft); }
+html[data-look] .text-red-600,
+html[data-look] .text-orange-600,
+html[data-look] .text-orange-700,
+html[data-look] .text-orange-800,
+html[data-look] .text-blue-600,
+html[data-look] .text-blue-700 { color: var(--nl-accent); }
+html[data-look] .border-black,
+html[data-look] .border-gray-300,
+html[data-look] .border-gray-400 { border-color: var(--nl-line); }
+html[data-look] .border-gray-200,
+html[data-look] .border-orange-200,
+html[data-look] .border-blue-200 { border-color: var(--nl-line-soft); }
+html[data-look] .hover\:bg-orange-50:hover,
+html[data-look] .hover\:bg-gray-50:hover,
+html[data-look] .hover\:bg-gray-100:hover { background-color: var(--nl-raised); }
+html[data-look] .placeholder\:text-gray-500::placeholder { color: var(--nl-soft); }
+
+/* Choices in the Read box, Have I read this?, settings */
+html[data-look] .theme-choice { border-color: var(--nl-line); background: var(--nl-card); color: var(--nl-ink); }
+html[data-look] .theme-choice:hover { border-color: var(--nl-soft); }
+html[data-look] .theme-choice[aria-checked="true"],
+html[data-look] .theme-choice[aria-pressed="true"] { border-color: var(--nl-accent); background: var(--nl-accent-soft); color: var(--nl-ink); }
+html[data-look] .theme-prompt { border-color: var(--nl-line-soft); background: var(--nl-accent-soft); }
+html[data-look] .theme-check { background: var(--nl-accent); color: var(--nl-on-accent); }
+
+/* Dialogs and menus */
+html[data-look] [role="dialog"] { border-radius: 1.5rem; border-color: var(--nl-line-soft); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3); }
+html[data-look] [role="menu"] { border-radius: 1rem; }
+html[data-look] [role="menuitem"] { min-height: 2.75rem; }
+
+/* Header */
+.nl-header { background: var(--nl-bar); color: var(--nl-ink); border-bottom: 1px solid var(--nl-line-soft); }
+.nl-header .text-white { color: var(--nl-ink); }
+.nl-header .hover\:bg-white\/20:hover { background-color: var(--nl-raised); }
+.nl-header [aria-label="Have I read this?"] {
+  width: 3rem; height: 3rem; padding: 0; justify-content: center;
+  border: 2px solid var(--nl-line); border-radius: 0.875rem; background: var(--nl-card); color: var(--nl-accent);
+}
+.nl-header [aria-label="Have I read this?"] > span { display: none; }
+.nl-search {
+  height: 3rem; border-radius: 0.875rem; border: 2px solid var(--nl-line);
+  background: var(--nl-card); color: var(--nl-ink); font-size: 1rem;
+}
+.nl-search:focus { outline: none; border-color: var(--nl-accent); box-shadow: 0 0 0 4px var(--nl-accent-soft); }
+
+/* Tab bar at the bottom */
+.nl-tabbar { background: var(--nl-bar); border-top: 1px solid var(--nl-line-soft); }
+.nl-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
+  min-width: 4.5rem; min-height: 3.5rem; padding: 0.375rem 0.75rem; border-radius: 1rem;
+  color: var(--nl-soft); font-weight: 700; font-size: 0.8125rem; line-height: 1.1;
+}
+.nl-tab:hover { background: var(--nl-raised); color: var(--nl-ink); }
+.nl-tab[aria-pressed="true"] { background: var(--nl-card); color: var(--nl-accent); box-shadow: 0 1px 2px var(--nl-shadow); }
+
+/* Book cards */
+.nl-card {
+  background: var(--nl-card); color: var(--nl-ink); border-radius: 1.25rem;
+  box-shadow: 0 1px 2px var(--nl-shadow), 0 8px 24px var(--nl-shadow);
+}
+html[data-look="evening"] .nl-card { box-shadow: none; border: 1px solid var(--nl-line-soft); }
+.nl-cover {
+  border-radius: 3px 8px 8px 3px; object-fit: cover; background: var(--nl-line-soft);
+  box-shadow: inset 6px 0 0 rgba(0, 0, 0, 0.1), 0 6px 14px rgba(40, 30, 10, 0.22);
+}
+html[data-look="evening"] .nl-cover { box-shadow: 0 0 28px rgba(224, 176, 100, 0.18), 0 6px 14px rgba(0, 0, 0, 0.5); }
+.nl-soft { color: var(--nl-soft); }
+.nl-link { color: var(--nl-accent); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.nl-choice {
+  display: inline-flex; flex: 1 1 0; align-items: center; justify-content: center; gap: 0.375rem;
+  min-height: 3.25rem; padding: 0 0.5rem; border-radius: 0.875rem;
+  border: 2px solid var(--nl-line); background: var(--nl-card); color: var(--nl-ink);
+  min-width: 0; text-align: center; line-height: 1.15;
+  font-weight: 700; font-size: 1rem; transition: background-color 0.15s, border-color 0.15s;
+}
+.nl-choice-stack { flex-direction: column; gap: 0.2rem; padding: 0.4rem 0.25rem; }
+/* Phones: icon above the label so three choices fit side by side */
+@media (max-width: 480px) {
+  .nl-choice { flex-direction: column; gap: 0.2rem; padding: 0.4rem 0.25rem; font-size: 0.9375rem; }
+  .nl-tab { min-width: 0; flex: 1 1 0; padding: 0.375rem 0.25rem; font-size: 0.75rem; text-align: center; }
+}
+.nl-choice:hover:not(:disabled) { background: var(--nl-raised); }
+.nl-choice[aria-pressed="true"] { border-color: var(--nl-accent); background: var(--nl-accent); color: var(--nl-on-accent); }
+.nl-choice:disabled { opacity: 0.6; }
+.nl-rating[aria-pressed="true"] { border-color: var(--nl-accent); background: var(--nl-accent-soft); color: var(--nl-accent); }
+.nl-rating-loved[aria-pressed="true"] { border-color: var(--nl-loved); background: var(--nl-loved-bg); color: var(--nl-loved); }
+.nl-pill {
+  display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.65rem; border-radius: 999px;
+  font-size: 0.875rem; font-weight: 700; background: var(--nl-accent-soft); color: var(--nl-accent);
+}
+.nl-pill-loved { background: var(--nl-loved-bg); color: var(--nl-loved); }
+.nl-note {
+  font-family: var(--nl-serif), Georgia, serif; font-style: italic;
+  background: var(--nl-raised); border-radius: 0.75rem; padding: 0.5rem 0.75rem; color: var(--nl-ink);
+}
+.nl-chip-new { background: #FFF1D1; color: #6B4500; }
+html[data-look="evening"] .nl-chip-new { background: #3A3020; color: #F6E3BF; }
+.nl-header button { min-height: 2.75rem; min-width: 2.75rem; }

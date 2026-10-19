@@ -23,11 +23,14 @@ The other features stay in place.
 
 ## 3. Put the whole app back to a stable point
 
-The branch `stable-2026-10-15` holds the app exactly as it was on October 15, 2026, before any of the design features were added.
+Two saved snapshots:
+
+- `stable-2026-10-19` holds the app exactly as it was on October 19, 2026, just before the new look (Daytime and Evening). To go back to the old look only, the quickest way is to set `newLook` to `false` in `lib/features.ts` (see 1 above).
+- `stable-2026-10-15` holds the app as it was on October 15, 2026, before any of the design features were added.
 
 **Fastest (for an emergency):** in Vercel, open the project **my-bookshelf-v3**, then **Deployments**. Find an earlier deployment that worked, open its **...** menu and choose **Promote to Production** (Vercel may call this **Instant Rollback**). The live site switches back right away. The next merge to `main` publishes again on top of it.
 
-**Permanent:** ask Claude to reset `main` to the `stable-2026-10-15` branch through a pull request, so the code itself goes back.
+**Permanent:** ask Claude to reset `main` to one of these branches through a pull request, so the code itself goes back.
 
 ## Saved books are always kept
 
