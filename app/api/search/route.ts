@@ -152,7 +152,7 @@ async function fetchGoogleJson(url: URL): Promise<any | null> {
   if (apiKey) url.searchParams.set("key", apiKey)
   const resp = await fetch(url.toString(), { ...CACHE_A_DAY, signal: AbortSignal.timeout(8000) })
   if (!resp.ok) {
-    if (resp.status === 429 || resp.status === 403 || resp.status === 400) {
+    if ([400, 403, 429, 500, 502, 503].includes(resp.status)) {
       googlePausedUntil = Date.now() + 10 * 60 * 1000
     }
     return null
@@ -367,12 +367,12 @@ function shareDetailsAcrossCopies(books: NormalizedBook[]): void {
   for (const book of books) {
     const key = copyKey(book)
     const found = best.get(key)
-    if (!found || (!found.description && book.description)) best.set(key, book)
+    if (!found || book.description.length > found.description.length) best.set(key, book)
   }
   for (const book of books) {
     const source = best.get(copyKey(book))
     if (!source || source === book) continue
-    if (!book.description) book.description = source.description
+    if (book.description.length < source.description.length) book.description = source.description
     if (!book.thumbnail) book.thumbnail = source.thumbnail
   }
 }
@@ -382,23 +382,40 @@ function shareDetailsAcrossCopies(books: NormalizedBook[]): void {
 // title and author. Apple comes before Google's search so Google's daily quota
 // lasts. Stops waiting after budgetMs so the
 // shelf is never held up; whatever was found by then is kept.
+// Some catalog entries hold only a blurb ("'I loved it' Maggie O'Farrell"), which is not a description
+function isUsefulDescription(description: string | undefined): boolean {
+  return (description || "").trim().length >= 100
+}
+
 async function fillMissingDescriptions(books: NormalizedBook[], budgetMs: number): Promise<void> {
   shareDetailsAcrossCopies(books)
   const missing = new Map<string, NormalizedBook>()
   for (const book of books) {
-    if (!book.description && !missing.has(copyKey(book))) missing.set(copyKey(book), book)
+    if (!isUsefulDescription(book.description) && !missing.has(copyKey(book))) missing.set(copyKey(book), book)
   }
   if (missing.size === 0) return
   const lookups = Array.from(missing.values())
     .slice(0, 15)
     .map(async (book) => {
+      // Keep the longest description found, and stop once one is long enough
+      const consider = (found: string) => {
+        if (found.length > (book.description || "").length) book.description = found
+      }
       const isOpenLibrary = book.id.startsWith("OL/works/")
-      book.description = isOpenLibrary
-        ? plainText(await fetchOpenLibraryDescription(book.id.replace(/^OL/, "")))
-        : await googleVolumeDescription(book.id)
-      if (!book.description) book.description = await appleBooksDescription(book)
-      if (!book.description) await fillFromGoogle(book)
-      if (!book.description && !isOpenLibrary) book.description = await openLibraryDescriptionFor(book)
+      consider(
+        isOpenLibrary
+          ? plainText(await fetchOpenLibraryDescription(book.id.replace(/^OL/, "")))
+          : await googleVolumeDescription(book.id),
+      )
+      if (!isUsefulDescription(book.description)) consider(await appleBooksDescription(book))
+      if (!isUsefulDescription(book.description)) {
+        const copy = { ...book, description: "" }
+        await fillFromGoogle(copy)
+        consider(copy.description)
+        if (!book.thumbnail) book.thumbnail = copy.thumbnail
+        if (!book.isbn) book.isbn = copy.isbn
+      }
+      if (!isUsefulDescription(book.description) && !isOpenLibrary) consider(await openLibraryDescriptionFor(book))
     })
   await Promise.race([Promise.all(lookups), new Promise((resolve) => setTimeout(resolve, budgetMs))])
   shareDetailsAcrossCopies(books)
