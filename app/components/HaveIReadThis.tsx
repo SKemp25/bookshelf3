@@ -29,6 +29,8 @@ interface HaveIReadThisProps {
   wantToReadBooks: Set<string>
   dontWantBooks: Set<string>
   bookRatings: Map<string, Rating>
+  bookNotes: Map<string, string>
+  onEditNote: (bookId: string, title: string, author: string) => void
   onShowOnShelf: (title: string) => void
 }
 
@@ -36,7 +38,7 @@ interface HaveIReadThisProps {
  * A search at the top of Home that answers one question: is this book marked
  * as read? Shown for "Help me remember" and "Most support".
  */
-export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontWantBooks, bookRatings, onShowOnShelf }: HaveIReadThisProps) {
+export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontWantBooks, bookRatings, bookNotes, onEditNote, onShowOnShelf }: HaveIReadThisProps) {
   const { mode } = useUsageMode()
   const [query, setQuery] = useState("")
 
@@ -50,6 +52,7 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
   const [best, ...others] = matches
   const typed = query.trim().length > 0
   const rating = best ? bookRatings.get(best.key) : undefined
+  const note = best ? bookNotes.get(best.key) : undefined
 
   return (
     <section className="mb-5 rounded-2xl border-2 border-gray-200 bg-white p-4 md:p-5" aria-labelledby="have-i-read-heading">
@@ -100,13 +103,27 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
                 {best.book.publishedDate ? `, ${best.book.publishedDate.slice(0, 4)}` : ""}.
               </p>
               {rating && <p className="mt-1 text-lg text-gray-800">{RATING_TEXT[rating]}</p>}
-              <Button
-                variant="outline"
-                className="tap-target mt-3 border-2 border-gray-900 text-base font-bold text-gray-900"
-                onClick={() => onShowOnShelf(best.book.title)}
-              >
-                Show on my shelf
-              </Button>
+              {note && (
+                <p className="mt-3 whitespace-pre-line border-l-4 theme-bar pl-3 text-lg italic text-gray-900">{note}</p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  className="tap-target border-2 border-gray-900 text-base font-bold text-gray-900"
+                  onClick={() => onShowOnShelf(best.book.title)}
+                >
+                  Show on my shelf
+                </Button>
+                {(note || best.status === "read") && (
+                  <Button
+                    variant="outline"
+                    className="tap-target border-2 border-gray-300 text-base font-bold text-gray-900"
+                    onClick={() => onEditNote(best.key, best.book.title, best.book.author)}
+                  >
+                    {note ? "Edit note" : "Add a note"}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

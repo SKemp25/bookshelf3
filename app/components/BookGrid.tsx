@@ -57,6 +57,8 @@ interface BookGridProps {
   emptyStateIconClass?: string // Theme-aware icon class for empty state
   emptyStateTitleClass?: string // Theme-aware title class for empty state
   emptyStateDescClass?: string // Theme-aware description class for empty state
+  bookNotes?: Map<string, string> // The reader's own notes, keyed like readBooks
+  onEditNote?: (bookId: string, title: string, author: string) => void
 }
 
 export default function BookGrid({
@@ -85,8 +87,30 @@ export default function BookGrid({
   emptyStateIconClass = "text-orange-400",
   emptyStateTitleClass = "text-orange-800",
   emptyStateDescClass = "text-orange-600",
+  bookNotes = new Map(),
+  onEditNote,
 }: BookGridProps) {
   const showCovers = memoryAids.includes("Show book covers")
+
+  // The reader's note sits above the publisher's description; tapping it opens it for editing.
+  const renderNote = (bookId: string, book: Book) => {
+    const note = bookNotes.get(bookId)
+    if (!note) return null
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onEditNote?.(bookId, book.title, book.author)
+        }}
+        className="block w-full rounded-lg border-l-4 theme-bar bg-gray-50 px-3 py-2 text-left"
+        aria-label={`Your note on ${book.title}. Tap to edit.`}
+      >
+        <span className="block text-xs font-bold uppercase tracking-wide text-gray-600">Your note</span>
+        <span className="block whitespace-pre-line text-sm italic text-gray-900">{note}</span>
+      </button>
+    )
+  }
   const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set())
   const [expandedMobileDescriptions, setExpandedMobileDescriptions] = useState<Set<string>>(new Set())
   const [isUpdating, setIsUpdating] = useState<Set<string>>(new Set())
@@ -870,6 +894,8 @@ export default function BookGrid({
                       )}
                     </div>
 
+                    {renderNote(bookId, book)}
+
                     {/* Description - Expandable */}
                     <div className="space-y-1">
                       {book.description ? (
@@ -1010,6 +1036,8 @@ export default function BookGrid({
                       {getStatusText(status)}
                     </Badge>
                   </div>
+
+                  {renderNote(bookId, book)}
 
                   {/* Description */}
                   <div className="space-y-2">
