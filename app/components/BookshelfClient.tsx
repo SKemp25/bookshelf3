@@ -7,7 +7,9 @@ import BookGrid from "./BookGrid"
 import TextSizePicker from "./TextSizePicker"
 import UsageModePrompt from "./UsageModePrompt"
 import HaveIReadThis from "./HaveIReadThis"
-import BookNoteDialog, { type NoteTarget } from "./BookNoteDialog"
+import BookDetailsDialog, { type DetailsTarget } from "./BookDetailsDialog"
+import { normalizeReadDate, type ReadDate } from "@/lib/readDates"
+import { isFeatureOn } from "@/lib/features"
 import { useUsageMode } from "./useUsageMode"
 import { isToolOn } from "@/lib/usageMode"
 import UsageModeSetting from "./UsageModeSetting"
@@ -196,8 +198,11 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
   const [dontWantBooks, setDontWantBooks] = useState<Set<string>>(new Set())
   const [bookRatings, setBookRatings] = useState<Map<string, "loved" | "liked" | "didnt-like">>(new Map())
   const [bookNotes, setBookNotes] = useState<Map<string, string>>(new Map())
-  const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null)
+  const [readDates, setReadDates] = useState<Map<string, ReadDate>>(new Map())
+  const [detailsTarget, setDetailsTarget] = useState<DetailsTarget | null>(null)
   const { mode: usageMode } = useUsageMode()
+  // The "When did you finish it?" box: read dates for everyone, plus a note field for the memory modes.
+  const canAskDetails = isFeatureOn("readDates") || isToolOn("notePrompt", usageMode)
   const [friends, setFriends] = useState<string[]>([])
   const [selectedAuthors, setSelectedAuthors] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<string>("newest")
@@ -737,6 +742,10 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
           if (parsedData.bookRatings) {
             setBookRatings(new Map(Object.entries(parsedData.bookRatings)))
           }
+          setReadDates(new Map(Object.entries(parsedData.readDates || {}).flatMap(([k, v]) => {
+            const d = normalizeReadDate(v)
+            return d ? [[k, d] as [string, ReadDate]] : []
+          })))
           setBookNotes(new Map(Object.entries(parsedData.bookNotes || {}).filter(([, v]) => typeof v === "string") as [string, string][]))
           
           const endTime = performance.now()
@@ -776,6 +785,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
       dontWantBooks: Array.from(dontWantBooks),
       bookRatings: Object.fromEntries(bookRatings),
       bookNotes: Object.fromEntries(bookNotes),
+      readDates: Object.fromEntries(readDates),
       user: userState,
       platforms,
       friends,
@@ -791,6 +801,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
     dontWantBooks,
     bookRatings,
     bookNotes,
+    readDates,
     userState,
     platforms,
     friends,
@@ -1437,7 +1448,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
               dontWantBooks={dontWantBooks}
               bookRatings={bookRatings}
               bookNotes={bookNotes}
-              onEditNote={(bookId, title, author) => setNoteTarget({ bookId, title, author, reason: "edit" })}
+              readDates={readDates}
+              onEditNote={(bookId, title, author) => setDetailsTarget({ bookId, title, author, reason: "edit" })}
               onShowOnShelf={(title) => {
                 setFooterView(null)
                 setSearchQuery(title)
@@ -1656,18 +1668,26 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
         {/* Main Content - Book Grid */}
         <main className="flex-1 px-4 md:px-6 py-6 overflow-y-auto" style={{ maxHeight: isMobileLayout ? 'calc(100vh - 180px)' : 'calc(100vh - 140px)' }}>
           {isLoggedIn && <UsageModePrompt />}
-          <BookNoteDialog
-            target={noteTarget}
-            existingNote={noteTarget ? bookNotes.get(noteTarget.bookId) || "" : ""}
-            onClose={() => setNoteTarget(null)}
-            onSave={(bookId, note) =>
-              setBookNotes((prev) => {
+          <BookDetailsDialog
+            target={detailsTarget}
+            showNote={isToolOn("notePrompt", usageMode)}
+            existing={{
+              date: detailsTarget ? readDates.get(detailsTarget.bookId) ?? null : null,
+              rating: detailsTarget ? bookRatings.get(detailsTarget.bookId) ?? null : null,
+              note: detailsTarget ? bookNotes.get(detailsTarget.bookId) ?? "" : "",
+            }}
+            onClose={() => setDetailsTarget(null)}
+            onSave={(bookId, { date, rating, note }) => {
+              const update = <V,>(prev: Map<string, V>, value: V | null | "") => {
                 const next = new Map(prev)
-                if (note) next.set(bookId, note)
+                if (value) next.set(bookId, value)
                 else next.delete(bookId)
                 return next
-              })
-            }
+              }
+              setReadDates((prev) => update(prev, date))
+              setBookRatings((prev) => update(prev, rating))
+              setBookNotes((prev) => update(prev, note))
+            }}
           />
 
           {/* Reading Progress */}
@@ -1687,7 +1707,9 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
               <div data-tour="books" data-onboarding="book-actions">
                 <BookGrid
                 bookNotes={bookNotes}
-                onEditNote={(bookId, title, author) => setNoteTarget({ bookId, title, author, reason: "edit" })}
+                readDates={readDates}
+                canEditDetails={canAskDetails}
+                onEditNote={(bookId, title, author) => setDetailsTarget({ bookId, title, author, reason: "edit" })}
                   books={filteredAndLimitedBooks}
                 sortBy={sortBy}
                 readBooks={readBooks}
@@ -1757,8 +1779,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                 }}
                 onMarkAsRead={(bookId, title, author) => {
                   setReadBooks((prev) => new Set([...prev, bookId]))
-                  if (isToolOn("notePrompt", usageMode) && !bookNotes.has(bookId)) {
-                    setNoteTarget({ bookId, title, author, reason: "finished" })
+                  if (canAskDetails && !readDates.has(bookId) && !bookNotes.has(bookId)) {
+                    setDetailsTarget({ bookId, title, author, reason: "finished" })
                   }
                   setWantToReadBooks((prev) => {
                     const newSet = new Set(prev)
