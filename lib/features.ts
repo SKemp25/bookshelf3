@@ -23,7 +23,7 @@ export const features = {
 
   // Step 2: everyday memory help
   haveIReadThis: true,
-  notePrompt: false,
+  notePrompt: true,
   nextInSeries: false,
   recentlyViewed: false,
   addToHomeScreen: false,

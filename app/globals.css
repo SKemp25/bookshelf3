@@ -110,3 +110,4 @@ html[data-text-size="largest"] .tap-target {
 }
 .theme-check { background: var(--theme-accent); }
 .theme-prompt { border-color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 8%, white); }
+.theme-bar { border-color: var(--theme-accent); }

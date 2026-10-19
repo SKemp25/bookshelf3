@@ -1,8 +1,9 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Search, X } from "lucide-react"
+import { Search, SearchCheck, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { Book } from "@/lib/types"
 import { answerFor, findOnShelf, type ShelfStatus } from "@/lib/haveIRead"
 import { isToolOn } from "@/lib/usageMode"
@@ -29,16 +30,25 @@ interface HaveIReadThisProps {
   wantToReadBooks: Set<string>
   dontWantBooks: Set<string>
   bookRatings: Map<string, Rating>
+  bookNotes: Map<string, string>
+  onEditNote: (bookId: string, title: string, author: string) => void
   onShowOnShelf: (title: string) => void
 }
 
 /**
- * A search at the top of Home that answers one question: is this book marked
+ * A header button that opens a search answering one question: is this book marked
  * as read? Shown for "Help me remember" and "Most support".
  */
-export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontWantBooks, bookRatings, onShowOnShelf }: HaveIReadThisProps) {
+export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontWantBooks, bookRatings, bookNotes, onEditNote, onShowOnShelf }: HaveIReadThisProps) {
   const { mode } = useUsageMode()
   const [query, setQuery] = useState("")
+  const [open, setOpen] = useState(false)
+
+  // Every visit starts with an empty search.
+  const setOpenAndReset = (next: boolean) => {
+    setOpen(next)
+    if (!next) setQuery("")
+  }
 
   const matches = useMemo(
     () => findOnShelf(query, books, { readBooks, wantToReadBooks, dontWantBooks }),
@@ -50,12 +60,28 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
   const [best, ...others] = matches
   const typed = query.trim().length > 0
   const rating = best ? bookRatings.get(best.key) : undefined
+  const note = best ? bookNotes.get(best.key) : undefined
 
   return (
-    <section className="mb-5 rounded-2xl border-2 border-gray-200 bg-white p-4 md:p-5" aria-labelledby="have-i-read-heading">
-      <label id="have-i-read-heading" htmlFor="have-i-read-input" className="mb-2 block text-lg font-bold text-gray-900">
-        Have I read this?
-      </label>
+    <>
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => setOpen(true)}
+      aria-label="Have I read this?"
+      title="Have I read this?"
+      className="tap-target flex flex-shrink-0 gap-2 p-2 text-white hover:bg-white/20"
+    >
+      <SearchCheck className="h-5 w-5" />
+      <span className="hidden xl:inline">Have I read this?</span>
+    </Button>
+    <Dialog open={open} onOpenChange={setOpenAndReset}>
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl overflow-y-auto sm:max-w-2xl">
+      <DialogHeader>
+        <DialogTitle className="text-2xl">
+          <label htmlFor="have-i-read-input">Have I read this?</label>
+        </DialogTitle>
+      </DialogHeader>
       <div className="relative">
         <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" aria-hidden="true" />
         <input
@@ -65,6 +91,7 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Type a title or author"
           autoComplete="off"
+          autoFocus
           className="h-14 w-full rounded-xl border-2 border-gray-300 bg-white pl-12 pr-14 text-lg text-gray-900 placeholder:text-gray-500 focus:border-gray-900 focus:outline-none [&::-webkit-search-cancel-button]:hidden"
         />
         {typed && (
@@ -100,13 +127,33 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
                 {best.book.publishedDate ? `, ${best.book.publishedDate.slice(0, 4)}` : ""}.
               </p>
               {rating && <p className="mt-1 text-lg text-gray-800">{RATING_TEXT[rating]}</p>}
-              <Button
-                variant="outline"
-                className="tap-target mt-3 border-2 border-gray-900 text-base font-bold text-gray-900"
-                onClick={() => onShowOnShelf(best.book.title)}
-              >
-                Show on my shelf
-              </Button>
+              {note && (
+                <p className="mt-3 whitespace-pre-line border-l-4 theme-bar pl-3 text-lg italic text-gray-900">{note}</p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  className="tap-target border-2 border-gray-900 text-base font-bold text-gray-900"
+                  onClick={() => {
+                    onShowOnShelf(best.book.title)
+                    setOpenAndReset(false)
+                  }}
+                >
+                  Show on my shelf
+                </Button>
+                {(note || best.status === "read") && (
+                  <Button
+                    variant="outline"
+                    className="tap-target border-2 border-gray-300 text-base font-bold text-gray-900"
+                    onClick={() => {
+                      onEditNote(best.key, best.book.title, best.book.author)
+                      setOpenAndReset(false)
+                    }}
+                  >
+                    {note ? "Edit note" : "Add a note"}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -136,6 +183,8 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
           </div>
         )}
       </div>
-    </section>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

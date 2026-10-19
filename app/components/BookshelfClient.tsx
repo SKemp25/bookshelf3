@@ -7,6 +7,9 @@ import BookGrid from "./BookGrid"
 import TextSizePicker from "./TextSizePicker"
 import UsageModePrompt from "./UsageModePrompt"
 import HaveIReadThis from "./HaveIReadThis"
+import BookNoteDialog, { type NoteTarget } from "./BookNoteDialog"
+import { useUsageMode } from "./useUsageMode"
+import { isToolOn } from "@/lib/usageMode"
 import UsageModeSetting from "./UsageModeSetting"
 import BookFilters from "./BookFilters"
 import AdvancedFilters from "./AdvancedFilters"
@@ -192,6 +195,9 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
   const [wantToReadBooks, setWantToReadBooks] = useState<Set<string>>(new Set())
   const [dontWantBooks, setDontWantBooks] = useState<Set<string>>(new Set())
   const [bookRatings, setBookRatings] = useState<Map<string, "loved" | "liked" | "didnt-like">>(new Map())
+  const [bookNotes, setBookNotes] = useState<Map<string, string>>(new Map())
+  const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null)
+  const { mode: usageMode } = useUsageMode()
   const [friends, setFriends] = useState<string[]>([])
   const [selectedAuthors, setSelectedAuthors] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<string>("newest")
@@ -677,6 +683,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
           if (parsedData.bookRatings) {
             setBookRatings(new Map(Object.entries(parsedData.bookRatings)))
           }
+          setBookNotes(new Map(Object.entries(parsedData.bookNotes || {}).filter(([, v]) => typeof v === "string") as [string, string][]))
           
           const endTime = performance.now()
           const duration = endTime - startTime
@@ -714,6 +721,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
       wantToReadBooks: Array.from(wantToReadBooks),
       dontWantBooks: Array.from(dontWantBooks),
       bookRatings: Object.fromEntries(bookRatings),
+      bookNotes: Object.fromEntries(bookNotes),
       user: userState,
       platforms,
       friends,
@@ -728,6 +736,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
     wantToReadBooks,
     dontWantBooks,
     bookRatings,
+    bookNotes,
     userState,
     platforms,
     friends,
@@ -1350,11 +1359,38 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                 placeholder="Search books..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 w-full text-sm md:text-base bg-white text-black placeholder:text-gray-500"
+                className="pl-10 pr-10 w-full text-sm md:text-base bg-white text-black placeholder:text-gray-500"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                  className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
 
+          {/* Have I read this? (memory tool, opens a search dialog) */}
+          {isLoggedIn && (
+            <HaveIReadThis
+              books={books}
+              readBooks={readBooks}
+              wantToReadBooks={wantToReadBooks}
+              dontWantBooks={dontWantBooks}
+              bookRatings={bookRatings}
+              bookNotes={bookNotes}
+              onEditNote={(bookId, title, author) => setNoteTarget({ bookId, title, author, reason: "edit" })}
+              onShowOnShelf={(title) => {
+                setFooterView(null)
+                setSearchQuery(title)
+                requestAnimationFrame(() => document.querySelector('[data-tour="books"]')?.scrollIntoView({ behavior: "smooth", block: "start" }))
+              }}
+            />
+          )}
           {/* Right: Mobile Menu (hamburger) or Desktop Action Buttons */}
           {isMobileLayout ? (
             <DropdownMenu open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
@@ -1566,20 +1602,19 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
         {/* Main Content - Book Grid */}
         <main className="flex-1 px-4 md:px-6 py-6 overflow-y-auto" style={{ maxHeight: isMobileLayout ? 'calc(100vh - 180px)' : 'calc(100vh - 140px)' }}>
           {isLoggedIn && <UsageModePrompt />}
-          {isLoggedIn && (
-            <HaveIReadThis
-              books={books}
-              readBooks={readBooks}
-              wantToReadBooks={wantToReadBooks}
-              dontWantBooks={dontWantBooks}
-              bookRatings={bookRatings}
-              onShowOnShelf={(title) => {
-                setFooterView(null)
-                setSearchQuery(title)
-                requestAnimationFrame(() => document.querySelector('[data-tour="books"]')?.scrollIntoView({ behavior: "smooth", block: "start" }))
-              }}
-            />
-          )}
+          <BookNoteDialog
+            target={noteTarget}
+            existingNote={noteTarget ? bookNotes.get(noteTarget.bookId) || "" : ""}
+            onClose={() => setNoteTarget(null)}
+            onSave={(bookId, note) =>
+              setBookNotes((prev) => {
+                const next = new Map(prev)
+                if (note) next.set(bookId, note)
+                else next.delete(bookId)
+                return next
+              })
+            }
+          />
 
           {/* Reading Progress */}
           <div className="mb-4 flex items-center justify-between">
@@ -1597,6 +1632,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
 
               <div data-tour="books" data-onboarding="book-actions">
                 <BookGrid
+                bookNotes={bookNotes}
+                onEditNote={(bookId, title, author) => setNoteTarget({ bookId, title, author, reason: "edit" })}
                   books={filteredAndLimitedBooks}
                 sortBy={sortBy}
                 readBooks={readBooks}
@@ -1666,6 +1703,9 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                 }}
                 onMarkAsRead={(bookId, title, author) => {
                   setReadBooks((prev) => new Set([...prev, bookId]))
+                  if (isToolOn("notePrompt", usageMode) && !bookNotes.has(bookId)) {
+                    setNoteTarget({ bookId, title, author, reason: "finished" })
+                  }
                   setWantToReadBooks((prev) => {
                     const newSet = new Set(prev)
                     newSet.delete(bookId)
