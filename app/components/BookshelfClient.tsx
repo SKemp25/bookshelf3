@@ -555,7 +555,9 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
       tried = {}
     }
     const dayAgo = Date.now() - 24 * 60 * 60 * 1000
-    const toLookUp = books.filter((book) => !book.description && book.title && !(tried[book.id] > dayAgo))
+    // A blurb such as "'I loved it' Maggie O'Farrell" is not a description either
+    const tooShort = (text?: string) => (text || "").trim().length < 100
+    const toLookUp = books.filter((book) => tooShort(book.description) && book.title && !(tried[book.id] > dayAgo))
     if (toLookUp.length === 0) return
     descriptionLookupRunning.current = true
 
@@ -572,17 +574,20 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
           if (!response.ok) continue
           const results = await response.json()
           const match = (Array.isArray(results) ? results : []).find(
-            (result: Book) => result.description && sameTitle(result.title || "", book.title),
+            (result: Book) =>
+              (result.description || "").length > (book.description || "").length &&
+              sameTitle(result.title || "", book.title),
           )
           if (match) {
             setBooks((prev) =>
               prev.map((b) =>
-                b.id === book.id && !b.description
+                b.id === book.id && (b.description || "").length < (match.description || "").length
                   ? { ...b, description: match.description, thumbnail: b.thumbnail || match.thumbnail }
                   : b,
               ),
             )
-          } else {
+          }
+          if (!match || tooShort(match.description)) {
             tried[book.id] = Date.now()
             localStorage.setItem(triedKey, JSON.stringify(tried))
           }
