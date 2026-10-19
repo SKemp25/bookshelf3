@@ -1359,11 +1359,38 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                 placeholder="Search books..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 w-full text-sm md:text-base bg-white text-black placeholder:text-gray-500"
+                className="pl-10 pr-10 w-full text-sm md:text-base bg-white text-black placeholder:text-gray-500"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                  className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
 
+          {/* Have I read this? (memory tool, opens a search dialog) */}
+          {isLoggedIn && (
+            <HaveIReadThis
+              books={books}
+              readBooks={readBooks}
+              wantToReadBooks={wantToReadBooks}
+              dontWantBooks={dontWantBooks}
+              bookRatings={bookRatings}
+              bookNotes={bookNotes}
+              onEditNote={(bookId, title, author) => setNoteTarget({ bookId, title, author, reason: "edit" })}
+              onShowOnShelf={(title) => {
+                setFooterView(null)
+                setSearchQuery(title)
+                requestAnimationFrame(() => document.querySelector('[data-tour="books"]')?.scrollIntoView({ behavior: "smooth", block: "start" }))
+              }}
+            />
+          )}
           {/* Right: Mobile Menu (hamburger) or Desktop Action Buttons */}
           {isMobileLayout ? (
             <DropdownMenu open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
@@ -1588,22 +1615,6 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
               })
             }
           />
-          {isLoggedIn && (
-            <HaveIReadThis
-              books={books}
-              readBooks={readBooks}
-              wantToReadBooks={wantToReadBooks}
-              dontWantBooks={dontWantBooks}
-              bookRatings={bookRatings}
-              bookNotes={bookNotes}
-              onEditNote={(bookId, title, author) => setNoteTarget({ bookId, title, author, reason: "edit" })}
-              onShowOnShelf={(title) => {
-                setFooterView(null)
-                setSearchQuery(title)
-                requestAnimationFrame(() => document.querySelector('[data-tour="books"]')?.scrollIntoView({ behavior: "smooth", block: "start" }))
-              }}
-            />
-          )}
 
           {/* Reading Progress */}
           <div className="mb-4 flex items-center justify-between">
