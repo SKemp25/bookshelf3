@@ -23,7 +23,7 @@ import type { Book, User as UserType, Platform, AdvancedFilterState } from "@/li
 import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics"
 import { normalizeAuthorName } from "./AuthorManager"
 import { saveUserAuthors } from "@/lib/database"
-import { deduplicateBooks, isAllowedLibraryBook, isSpecialEdition, remapMergedBookIds } from "@/lib/utils"
+import { deduplicateBooks, isAllowedLibraryBook, isSpecialEdition, normalizeTitleForGrouping, remapMergedBookIds } from "@/lib/utils"
 import { fetchAuthorBooksWithCache } from "@/lib/apiCache"
 import DataExport from "./DataExport"
 import { APIErrorBoundary, ComponentErrorBoundary } from "./ErrorBoundary"
@@ -535,6 +535,61 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
     }
     fetchBooksForAuthors()
   }, [isDataLoaded, authors])
+
+  // Books saved without a description look it up by title and author, a few per visit.
+  // Each book is tried at most once a day so a book no catalog describes is not re-asked every load.
+  useEffect(() => {
+    if (!isDataLoaded || !currentUser) return
+    const missing = books.filter((book) => !book.description && book.title)
+    if (missing.length === 0) return
+    const triedKey = `bookshelf_description_tried_${currentUser}`
+    let tried: Record<string, number> = {}
+    try {
+      tried = JSON.parse(localStorage.getItem(triedKey) || "{}")
+    } catch {
+      tried = {}
+    }
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000
+    const toLookUp = missing.filter((book) => !(tried[book.id] > dayAgo)).slice(0, 8)
+    if (toLookUp.length === 0) return
+    toLookUp.forEach((book) => {
+      tried[book.id] = Date.now()
+    })
+    try {
+      localStorage.setItem(triedKey, JSON.stringify(tried))
+    } catch {
+      // only used to avoid repeat lookups
+    }
+
+    const fillDescriptions = async () => {
+      const found = new Map<string, Partial<Book>>()
+      for (const book of toLookUp) {
+        try {
+          const author = getBookAuthor(book)
+          const url = `/api/search?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(author)}&maxResults=5&lang=en`
+          const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20_000) })
+          if (!response.ok) continue
+          const results = await response.json()
+          const wanted = normalizeTitleForGrouping(book.title)
+          const match = (Array.isArray(results) ? results : []).find(
+            (result: Book) => result.description && normalizeTitleForGrouping(result.title || "") === wanted,
+          )
+          if (match) found.set(book.id, { description: match.description, thumbnail: match.thumbnail })
+        } catch {
+          // try again another day
+        }
+      }
+      if (found.size === 0) return
+      setBooks((prev) =>
+        prev.map((book) => {
+          const details = found.get(book.id)
+          if (!details || book.description) return book
+          return { ...book, description: details.description, thumbnail: book.thumbnail || details.thumbnail }
+        }),
+      )
+    }
+    fillDescriptions()
+  }, [isDataLoaded, currentUser, books])
 
   useEffect(() => {
     if (isLoggedIn && currentUser) {

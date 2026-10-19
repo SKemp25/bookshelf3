@@ -266,6 +266,67 @@ async function fetchOpenLibraryDescription(workKey: string): Promise<string> {
   return ""
 }
 
+// Find the Open Library work for a book Google found, then read its description
+async function openLibraryDescriptionFor(book: NormalizedBook): Promise<string> {
+  try {
+    const url = new URL("https://openlibrary.org/search.json")
+    url.searchParams.set("title", book.title)
+    url.searchParams.set("author", book.author)
+    url.searchParams.set("fields", "key,title,author_name")
+    url.searchParams.set("limit", "5")
+    const resp = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(4000) })
+    if (!resp.ok) return ""
+    const data = await resp.json()
+    const work = mapOpenLibraryDocs(data?.docs).find(
+      (candidate) => titleKey(candidate.title) === titleKey(book.title) && isByAuthor(candidate, book.author),
+    )
+    return work ? await fetchOpenLibraryDescription(work.id.replace(/^OL/, "")) : ""
+  } catch {
+    return ""
+  }
+}
+
+function copyKey(book: NormalizedBook): string {
+  return `${titleKey(book.title)}|${nameWords(book.author).join(" ")}`
+}
+
+// Google lists each edition separately and often only some carry a description,
+// so let every copy of the same book use the details another copy has
+function shareDetailsAcrossCopies(books: NormalizedBook[]): void {
+  const best = new Map<string, NormalizedBook>()
+  for (const book of books) {
+    const key = copyKey(book)
+    const found = best.get(key)
+    if (!found || (!found.description && book.description)) best.set(key, book)
+  }
+  for (const book of books) {
+    const source = best.get(copyKey(book))
+    if (!source || source === book) continue
+    if (!book.description) book.description = source.description
+    if (!book.thumbnail) book.thumbnail = source.thumbnail
+  }
+}
+
+// Books that still have no description are looked up one by one: first Google by
+// title and author, then Open Library. Stops waiting after budgetMs so the
+// shelf is never held up; whatever was found by then is kept.
+async function fillMissingDescriptions(books: NormalizedBook[], budgetMs: number): Promise<void> {
+  shareDetailsAcrossCopies(books)
+  const missing = new Map<string, NormalizedBook>()
+  for (const book of books) {
+    if (!book.description && !missing.has(copyKey(book))) missing.set(copyKey(book), book)
+  }
+  if (missing.size === 0) return
+  const lookups = Array.from(missing.values())
+    .slice(0, 15)
+    .map(async (book) => {
+      await fillFromGoogle(book)
+      if (!book.description) book.description = await openLibraryDescriptionFor(book)
+    })
+  await Promise.race([Promise.all(lookups), new Promise((resolve) => setTimeout(resolve, budgetMs))])
+  shareDetailsAcrossCopies(books)
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
 
@@ -290,9 +351,14 @@ export async function GET(request: NextRequest) {
   try {
     if (author && !title && !q) {
       // Relevance and newest-first are both asked for, so new releases are not buried
-      const byAuthor = await searchGoogleByAuthor(author, 40)
-      const books = newestFirst(filterLibraryBooks(byAuthor || [])).slice(0, maxResults)
-      if (books.length > 0) return NextResponse.json(books)
+      const byAuthor = filterLibraryBooks(await searchGoogleByAuthor(author, 40) || [])
+      // Share descriptions before trimming, so a kept edition can use one that is cut
+      shareDetailsAcrossCopies(byAuthor)
+      const books = newestFirst(byAuthor).slice(0, maxResults)
+      if (books.length > 0) {
+        await fillMissingDescriptions(books, 6000)
+        return NextResponse.json(books)
+      }
     } else {
       // A plain-words query first: Google often returns nothing for filter-only queries
       const plain = [q, title, author].filter(Boolean).join(" ")
@@ -302,8 +368,13 @@ export async function GET(request: NextRequest) {
       ])
       let found = mergeById(filtered || [], relevant || [])
       if (author) found = found.filter((book) => isByAuthor(book, author))
-      const books = filterLibraryBooks(found).slice(0, maxResults)
-      if (books.length > 0) return NextResponse.json(books)
+      found = filterLibraryBooks(found)
+      shareDetailsAcrossCopies(found)
+      const books = found.slice(0, maxResults)
+      if (books.length > 0) {
+        await fillMissingDescriptions(books, 6000)
+        return NextResponse.json(books)
+      }
     }
 
     // If rate-limited or otherwise failing, fall through to OpenLibrary.
@@ -332,18 +403,19 @@ export async function GET(request: NextRequest) {
     let olBooks = mapOpenLibraryDocs(data?.docs)
     if (author) olBooks = olBooks.filter((book) => isByAuthor(book, author))
     // Open Library often lists the same book several times; keep the earliest so the
-    // card shows the first publication and the lookups below are not wasted
+    // card shows the first publication and the lookups below are not wasted.
+    // Same title by different authors are different books ("Circe" by Madeline Miller and others).
     const firstYear = (b: NormalizedBook) => parseInt(b.publishedDate, 10) || 9999
-    olBooks.sort((a, b) => firstYear(a) - firstYear(b))
-    const seenTitles = new Set<string>()
-    olBooks = olBooks.filter((book) => {
-      const key = titleKey(book.title)
-      if (seenTitles.has(key)) return false
-      seenTitles.add(key)
-      return true
-    })
-    // Newest first before trimming, so recent books are not cut off the list
-    const books = newestFirst(filterLibraryBooks(olBooks)).slice(0, maxResults)
+    const earliest = new Map<string, NormalizedBook>()
+    for (const book of olBooks) {
+      const key = copyKey(book)
+      const kept = earliest.get(key)
+      if (!kept || firstYear(book) < firstYear(kept)) earliest.set(key, book)
+    }
+    olBooks = filterLibraryBooks(Array.from(earliest.values()))
+    // An author's books go newest first so recent ones are not cut off the list;
+    // a title search keeps Open Library's best matches at the top
+    const books = (author && !title ? newestFirst(olBooks) : olBooks).slice(0, maxResults)
     await fillAllFromGoogle(books)
     const missing = books.filter((book) => !book.description)
     const descriptions = await Promise.all(
