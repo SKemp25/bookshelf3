@@ -223,9 +223,10 @@ function titleKey(title: string): string {
 async function fillFromGoogle(book: NormalizedBook): Promise<void> {
   try {
     const found = await fetchGoogleOnce(`${book.title} ${book.author}`, 5, "relevance")
-    const match = (found || []).find(
+    const matches = (found || []).filter(
       (candidate) => titleKey(candidate.title) === titleKey(book.title) && isByAuthor(candidate, book.author),
     )
+    const match = matches.find((candidate) => candidate.description) || matches[0]
     if (!match) return
     if (!book.description) book.description = match.description
     if (!book.thumbnail) book.thumbnail = match.thumbnail
@@ -286,6 +287,64 @@ async function openLibraryDescriptionFor(book: NormalizedBook): Promise<string> 
   }
 }
 
+// Descriptions from Google's volume pages and Apple Books carry HTML such as <p> and <br>
+function plainText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&rsquo;|&lsquo;/g, "'")
+    .replace(/&ldquo;|&rdquo;/g, '"')
+    .replace(/&mdash;/g, "\u2014")
+    .replace(/&ndash;/g, "\u2013")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+// Google's search results sometimes leave out a description that the
+// volume's own page has, especially for recent books
+async function googleVolumeDescription(volumeId: string): Promise<string> {
+  if (!volumeId || volumeId.startsWith("OL") || volumeId.startsWith("GB-")) return ""
+  try {
+    const url = new URL(`https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(volumeId)}`)
+    const apiKey = process.env.GOOGLE_BOOKS_API_KEY
+    if (apiKey) url.searchParams.set("key", apiKey)
+    const resp = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(4000) })
+    if (!resp.ok) return ""
+    const data = await resp.json()
+    return typeof data?.volumeInfo?.description === "string" ? plainText(data.volumeInfo.description) : ""
+  } catch {
+    return ""
+  }
+}
+
+// Apple Books lists most recent fiction with the publisher's description, needs no key
+async function appleBooksDescription(book: NormalizedBook): Promise<string> {
+  try {
+    const url = new URL("https://itunes.apple.com/search")
+    url.searchParams.set("term", `${book.title} ${book.author}`)
+    url.searchParams.set("media", "ebook")
+    url.searchParams.set("limit", "5")
+    url.searchParams.set("country", "US")
+    const resp = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(4000) })
+    if (!resp.ok) return ""
+    const data = await resp.json()
+    const results: any[] = Array.isArray(data?.results) ? data.results : []
+    const match = results.find(
+      (item) =>
+        typeof item?.description === "string" &&
+        titleKey(String(item?.trackName || "")) === titleKey(book.title) &&
+        isByAuthor({ authors: [String(item?.artistName || "")], author: "" }, book.author),
+    )
+    return match ? plainText(match.description) : ""
+  } catch {
+    return ""
+  }
+}
+
 function copyKey(book: NormalizedBook): string {
   return `${titleKey(book.title)}|${nameWords(book.author).join(" ")}`
 }
@@ -307,8 +366,9 @@ function shareDetailsAcrossCopies(books: NormalizedBook[]): void {
   }
 }
 
-// Books that still have no description are looked up one by one: first Google by
-// title and author, then Open Library. Stops waiting after budgetMs so the
+// Books that still have no description are looked up one by one: Google's page
+// for the volume, Google by title and author, Open Library, then Apple Books.
+// Stops waiting after budgetMs so the
 // shelf is never held up; whatever was found by then is kept.
 async function fillMissingDescriptions(books: NormalizedBook[], budgetMs: number): Promise<void> {
   shareDetailsAcrossCopies(books)
@@ -320,8 +380,10 @@ async function fillMissingDescriptions(books: NormalizedBook[], budgetMs: number
   const lookups = Array.from(missing.values())
     .slice(0, 15)
     .map(async (book) => {
-      await fillFromGoogle(book)
+      book.description = await googleVolumeDescription(book.id)
+      if (!book.description) await fillFromGoogle(book)
       if (!book.description) book.description = await openLibraryDescriptionFor(book)
+      if (!book.description) book.description = await appleBooksDescription(book)
     })
   await Promise.race([Promise.all(lookups), new Promise((resolve) => setTimeout(resolve, budgetMs))])
   shareDetailsAcrossCopies(books)
@@ -356,7 +418,7 @@ export async function GET(request: NextRequest) {
       shareDetailsAcrossCopies(byAuthor)
       const books = newestFirst(byAuthor).slice(0, maxResults)
       if (books.length > 0) {
-        await fillMissingDescriptions(books, 6000)
+        await fillMissingDescriptions(books, 8000)
         return NextResponse.json(books)
       }
     } else {
@@ -372,7 +434,7 @@ export async function GET(request: NextRequest) {
       shareDetailsAcrossCopies(found)
       const books = found.slice(0, maxResults)
       if (books.length > 0) {
-        await fillMissingDescriptions(books, 6000)
+        await fillMissingDescriptions(books, 8000)
         return NextResponse.json(books)
       }
     }

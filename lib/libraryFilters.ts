@@ -413,7 +413,14 @@ export function isArchivalRecord(book: LibraryBookLike): boolean {
   return false
 }
 
+// Catalogs list announced books before they have a name ("Untitled", "Untitled Novel 3")
+export function isPlaceholderTitle(book: LibraryBookLike): boolean {
+  const title = asText(book.title).trim()
+  return !title || /^(untitled|unknown title|tba|tbc)\b/i.test(title)
+}
+
 export function isAllowedLibraryBook(book: LibraryBookLike): boolean {
+  if (isPlaceholderTitle(book)) return false
   if (!isEnglishLanguage(book.language)) return false
   if (isLikelyDifferentAuthor(book)) return false
   if (isArchivalRecord(book)) return false

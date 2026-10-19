@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import AccountManager from "./AccountManager"
 import AuthorManager from "./AuthorManager"
 import BookGrid from "./BookGrid"
@@ -536,13 +536,13 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
     fetchBooksForAuthors()
   }, [isDataLoaded, authors])
 
-  // Books saved without a description look it up by title and author, a few per visit.
-  // Each book is tried at most once a day so a book no catalog describes is not re-asked every load.
+  // Books saved without a description look it up by title and author, one at a time
+  // so the book services are not flooded. A book is only set aside for a day once a
+  // lookup actually came back without one; failed lookups are tried again next time.
+  const descriptionLookupRunning = useRef(false)
   useEffect(() => {
-    if (!isDataLoaded || !currentUser) return
-    const missing = books.filter((book) => !book.description && book.title)
-    if (missing.length === 0) return
-    const triedKey = `bookshelf_description_tried_${currentUser}`
+    if (!isDataLoaded || !currentUser || descriptionLookupRunning.current) return
+    const triedKey = `bookshelf_description_tried_v2_${currentUser}`
     let tried: Record<string, number> = {}
     try {
       tried = JSON.parse(localStorage.getItem(triedKey) || "{}")
@@ -550,43 +550,42 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
       tried = {}
     }
     const dayAgo = Date.now() - 24 * 60 * 60 * 1000
-    const toLookUp = missing.filter((book) => !(tried[book.id] > dayAgo)).slice(0, 8)
+    const toLookUp = books.filter((book) => !book.description && book.title && !(tried[book.id] > dayAgo))
     if (toLookUp.length === 0) return
-    toLookUp.forEach((book) => {
-      tried[book.id] = Date.now()
-    })
-    try {
-      localStorage.setItem(triedKey, JSON.stringify(tried))
-    } catch {
-      // only used to avoid repeat lookups
-    }
+    descriptionLookupRunning.current = true
+
+    // "North Woods: A Novel" and "North Woods" are the same book
+    const sameTitle = (a: string, b: string) =>
+      normalizeTitleForGrouping(a.split(":")[0]) === normalizeTitleForGrouping(b.split(":")[0])
 
     const fillDescriptions = async () => {
-      const found = new Map<string, Partial<Book>>()
       for (const book of toLookUp) {
         try {
           const author = getBookAuthor(book)
           const url = `/api/search?title=${encodeURIComponent(book.title)}&author=${encodeURIComponent(author)}&maxResults=5&lang=en`
-          const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20_000) })
+          const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(25_000) })
           if (!response.ok) continue
           const results = await response.json()
-          const wanted = normalizeTitleForGrouping(book.title)
           const match = (Array.isArray(results) ? results : []).find(
-            (result: Book) => result.description && normalizeTitleForGrouping(result.title || "") === wanted,
+            (result: Book) => result.description && sameTitle(result.title || "", book.title),
           )
-          if (match) found.set(book.id, { description: match.description, thumbnail: match.thumbnail })
+          if (match) {
+            setBooks((prev) =>
+              prev.map((b) =>
+                b.id === book.id && !b.description
+                  ? { ...b, description: match.description, thumbnail: b.thumbnail || match.thumbnail }
+                  : b,
+              ),
+            )
+          } else {
+            tried[book.id] = Date.now()
+            localStorage.setItem(triedKey, JSON.stringify(tried))
+          }
         } catch {
-          // try again another day
+          // timed out or offline: try again next time
         }
       }
-      if (found.size === 0) return
-      setBooks((prev) =>
-        prev.map((book) => {
-          const details = found.get(book.id)
-          if (!details || book.description) return book
-          return { ...book, description: details.description, thumbnail: book.thumbnail || details.thumbnail }
-        }),
-      )
+      descriptionLookupRunning.current = false
     }
     fillDescriptions()
   }, [isDataLoaded, currentUser, books])
