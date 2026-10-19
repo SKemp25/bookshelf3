@@ -413,10 +413,12 @@ export function isArchivalRecord(book: LibraryBookLike): boolean {
   return false
 }
 
-// Catalogs list announced books before they have a name ("Untitled", "Untitled Novel 3")
+// Catalogs list announced books before they have a name ("Untitled", "Untitled Novel 3",
+// "New John Rebus Thriller")
 export function isPlaceholderTitle(book: LibraryBookLike): boolean {
   const title = asText(book.title).trim()
-  return !title || /^(untitled|unknown title|tba|tbc)\b/i.test(title)
+  if (!title || /^(untitled|unknown title|tba|tbc)\b/i.test(title)) return true
+  return /^(new|untitled)\b[\w\s'\u2019.-]*\b(novel|thriller|mystery|book)(\s+\d+)?$/i.test(title)
 }
 
 export function isAllowedLibraryBook(book: LibraryBookLike): boolean {

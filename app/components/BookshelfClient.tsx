@@ -547,7 +547,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
   const descriptionLookupRunning = useRef(false)
   useEffect(() => {
     if (!isDataLoaded || !currentUser || descriptionLookupRunning.current) return
-    const triedKey = `bookshelf_description_tried_v2_${currentUser}`
+    const triedKey = `bookshelf_description_tried_v3_${currentUser}`
     let tried: Record<string, number> = {}
     try {
       tried = JSON.parse(localStorage.getItem(triedKey) || "{}")
