@@ -32,9 +32,9 @@ const looks = Object.keys(LOOKS) as Look[]
 const accents = Object.keys(ACCENTS) as Accent[]
 
 describe("new look colours", () => {
-  it("starts on Daytime with teal", () => {
+  it("starts on Daytime with Penguin orange", () => {
     assert.equal(DEFAULT_LOOK, "daytime")
-    assert.equal(DEFAULT_ACCENT, "teal")
+    assert.equal(DEFAULT_ACCENT, "orange")
   })
 
   it("keeps text readable on every background (WCAG AA, 4.5:1)", () => {
@@ -57,6 +57,8 @@ describe("new look colours", () => {
         assert.ok(contrast(v["--nl-accent"], v["--nl-card"]) >= 4.5, `${look}/${accent} on card`)
         assert.ok(contrast(v["--nl-accent"], v["--nl-bg"]) >= 4.5, `${look}/${accent} on page`)
         assert.ok(contrast(v["--nl-accent"], v["--nl-accent-soft"]) >= 4.5, `${look}/${accent} selected choice`)
+        // The header name is large bold text (3:1); the header buttons sit on a darker patch
+        assert.ok(contrast(v["--nl-on-band"], v["--nl-band"]) >= 3, `${look}/${accent} header`)
       }
     }
   })
@@ -65,18 +67,19 @@ describe("new look colours", () => {
     assert.equal(normalizeLook(null), "daytime")
     assert.equal(normalizeLook("dusk"), "daytime")
     assert.equal(normalizeLook("evening"), "evening")
-    assert.equal(normalizeAccent(null), "teal")
-    assert.equal(normalizeAccent("pink"), "teal")
-    assert.equal(normalizeAccent("gold"), "gold")
+    assert.equal(normalizeAccent(null), "orange")
+    assert.equal(normalizeAccent("pink"), "orange")
+    assert.equal(normalizeAccent("green"), "green")
+    // Teal and gold were colours in the first version of the new look
+    assert.equal(normalizeAccent("teal"), "orange")
   })
 
   it("starts from the old colour theme when no accent was chosen yet", () => {
     assert.equal(normalizeAccent(null, "blue"), "blue")
     assert.equal(normalizeAccent(null, "green"), "green")
-    assert.equal(normalizeAccent(null, "purple"), "teal")
-    // Orange was the old default, so it does not count as a choice
-    assert.equal(normalizeAccent(null, "orange"), "teal")
-    assert.equal(normalizeAccent("gold", "blue"), "gold")
+    assert.equal(normalizeAccent(null, "purple"), "orange")
+    assert.equal(normalizeAccent(null, "orange"), "orange")
+    assert.equal(normalizeAccent("green", "blue"), "green")
   })
 
   it("converts colours for the shared component styles", () => {
@@ -93,17 +96,20 @@ describe("new look colours", () => {
       fn({ getItem: (k: string) => saved[k] ?? null }, { documentElement: root })
       return { ...root.dataset, props }
     }
-    const evening = run({ bookshelf_look: "evening", bookshelf_accent: "gold" })
+    const evening = run({ bookshelf_look: "evening", bookshelf_accent: "green" })
     assert.equal(evening.look, "evening")
-    assert.equal(evening.accent, "gold")
-    assert.equal(evening.props["--nl-accent"], ACCENTS.gold.evening)
+    assert.equal(evening.accent, "green")
+    assert.equal(evening.props["--nl-accent"], ACCENTS.green.evening)
+    assert.equal(evening.props["--nl-band"], ACCENTS.green.eveningBand)
     assert.equal(evening.props["--nl-bg"], LOOKS.evening.colors.bg)
 
     const fresh = run({})
     assert.equal(fresh.look, "daytime")
-    assert.equal(fresh.accent, "teal")
+    assert.equal(fresh.accent, "orange")
+    assert.equal(fresh.props["--nl-band"], ACCENTS.orange.band)
 
     assert.equal(run({ bookshelf_color_theme: "blue" }).accent, "blue")
-    assert.equal(run({ bookshelf_look: "bogus", bookshelf_accent: "bogus" }).accent, "teal")
+    assert.equal(run({ bookshelf_look: "bogus", bookshelf_accent: "bogus" }).accent, "orange")
+    assert.equal(run({ bookshelf_accent: "teal", bookshelf_color_theme: "blue" }).accent, "blue")
   })
 })

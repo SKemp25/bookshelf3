@@ -113,14 +113,14 @@ html[data-text-size="largest"] .tap-target {
 .theme-bar { border-color: var(--theme-accent); }
 
 /* ------------------------------------------------------------------
-   New look (Step 4): Daytime and Evening, with one accent colour.
+   New look (Step 4): Daytime and Evening, with one Penguin colour.
    Only active when the `newLook` switch is on: the boot script in
    lib/look.ts then sets data-look on <html> and the --nl-* colours.
    The rules below also re-colour the older components' plain greys,
    whites and oranges so every screen and dialog follows the look.
    ------------------------------------------------------------------ */
 html[data-look] {
-  font-family: var(--nl-sans), "Atkinson Hyperlegible", system-ui, sans-serif;
+  font-family: var(--nl-sans), "Figtree", system-ui, sans-serif;
   color: var(--nl-ink);
   background: var(--nl-bg);
   color-scheme: light;
@@ -128,7 +128,7 @@ html[data-look] {
 html[data-look="evening"] { color-scheme: dark; }
 html[data-look] body { background: var(--nl-bg); color: var(--nl-ink); }
 
-.nl-serif, html[data-look] [role="dialog"] h2 { font-family: var(--nl-serif), Georgia, serif; font-weight: 600; letter-spacing: -0.01em; }
+.nl-heading, html[data-look] [role="dialog"] h2 { font-weight: 700; letter-spacing: -0.01em; }
 
 /* Plain colours used across the older components */
 html[data-look] .bg-white { background-color: var(--nl-card); }
@@ -176,59 +176,112 @@ html[data-look] [role="dialog"] { border-radius: 1.5rem; border-color: var(--nl-
 html[data-look] [role="menu"] { border-radius: 1rem; }
 html[data-look] [role="menuitem"] { min-height: 2.75rem; }
 
-/* Header */
-.nl-header { background: var(--nl-bar); color: var(--nl-ink); border-bottom: 1px solid var(--nl-line-soft); }
-.nl-header .text-white { color: var(--nl-ink); }
-.nl-header .hover\:bg-white\/20:hover { background-color: var(--nl-raised); }
-.nl-header [aria-label="Have I read this?"] {
-  width: 3rem; height: 3rem; padding: 0; justify-content: center;
-  border: 2px solid var(--nl-line); border-radius: 0.875rem; background: var(--nl-card); color: var(--nl-accent);
+/* Header: a Penguin colour band with white text */
+.nl-header { background: var(--nl-band); color: var(--nl-on-band); }
+.nl-header .text-white { color: var(--nl-on-band); }
+.nl-brand { display: flex; align-items: center; gap: 0.75rem; min-height: 2.75rem; font-size: 1.625rem; font-weight: 700; line-height: 1; letter-spacing: -0.01em; }
+.nl-brand-badge {
+  display: flex; flex: none; align-items: center; justify-content: center;
+  width: 2.875rem; height: 2.875rem; border-radius: 999px; background: #FFFFFF; color: var(--nl-accent);
 }
-.nl-header [aria-label="Have I read this?"] > span { display: none; }
+html[data-look="evening"] .nl-brand-badge { color: var(--nl-band); }
+/* Sort, Authors, Filter: a darker patch keeps the white labels readable on the band */
+.nl-header .nl-tool {
+  display: inline-flex; align-items: center; gap: 0.5rem; min-height: 3rem; padding: 0 0.875rem;
+  border-radius: 0.875rem; background: rgba(0, 0, 0, 0.25); color: var(--nl-on-band);
+  font-size: 1.0625rem; font-weight: 600;
+}
+.nl-header .nl-tool:hover { background: rgba(0, 0, 0, 0.35); color: var(--nl-on-band); }
+/* Log in / Log out: an icon in a white circle; its label stays for screen readers */
+.nl-header [data-account-manager] button,
+.nl-header button[data-account-manager] {
+  width: 3rem; height: 3rem; padding: 0; justify-content: center; border-radius: 999px;
+  background: #FFFFFF; color: var(--nl-accent);
+}
+.nl-header [data-account-manager] button:hover,
+.nl-header button[data-account-manager]:hover { background: #FFFFFF; color: var(--nl-accent); filter: brightness(0.95); }
+.nl-header [data-account-manager] svg,
+.nl-header button[data-account-manager] svg { width: 1.375rem; height: 1.375rem; margin: 0; }
+.nl-header [data-account-manager] span,
+.nl-header button[data-account-manager] span {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
 .nl-search {
-  height: 3rem; border-radius: 0.875rem; border: 2px solid var(--nl-line);
-  background: var(--nl-card); color: var(--nl-ink); font-size: 1rem;
+  height: 3.125rem; border-radius: 999px; border: 2px solid transparent;
+  background: #FFFFFF; color: #1A1A1A; font-size: 1.0625rem;
 }
-.nl-search:focus { outline: none; border-color: var(--nl-accent); box-shadow: 0 0 0 4px var(--nl-accent-soft); }
+.nl-search::placeholder { color: #55554F; }
+.nl-search:focus { outline: none; border-color: #1A1A1A; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6); }
 
-/* Tab bar at the bottom */
-.nl-tabbar { background: var(--nl-bar); border-top: 1px solid var(--nl-line-soft); }
+/* Tabs under the header */
+.nl-tabbar { background: var(--nl-bar); border-bottom: 1px solid var(--nl-line-soft); }
 .nl-tab {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
-  min-width: 4.5rem; min-height: 3.5rem; padding: 0.375rem 0.75rem; border-radius: 1rem;
-  color: var(--nl-soft); font-weight: 700; font-size: 0.8125rem; line-height: 1.1;
+  display: flex; flex: none; align-items: center; min-height: 3.5rem; padding: 0 1rem;
+  color: var(--nl-ink); font-weight: 500; font-size: 1.0625rem; white-space: nowrap;
 }
-.nl-tab:hover { background: var(--nl-raised); color: var(--nl-ink); }
-.nl-tab[aria-pressed="true"] { background: var(--nl-card); color: var(--nl-accent); box-shadow: 0 1px 2px var(--nl-shadow); }
+.nl-tab:hover { color: var(--nl-accent); }
+.nl-tab[aria-pressed="true"] { color: var(--nl-accent); font-weight: 700; box-shadow: inset 0 -4px 0 var(--nl-band); }
 
 /* Book cards */
 .nl-card {
-  background: var(--nl-card); color: var(--nl-ink); border-radius: 1.25rem;
-  box-shadow: 0 1px 2px var(--nl-shadow), 0 8px 24px var(--nl-shadow);
+  background: var(--nl-card); color: var(--nl-ink); border-radius: 1.125rem;
+  border: 1px solid var(--nl-line-soft); box-shadow: 0 1px 2px var(--nl-shadow);
 }
-html[data-look="evening"] .nl-card { box-shadow: none; border: 1px solid var(--nl-line-soft); }
+/* Future books: yellow outline. Just published: green outline for a month. */
+.nl-card-future { border: 3px solid #F5C400; }
+.nl-card-new { border: 3px solid #22A565; }
+.nl-tag {
+  display: inline-flex; align-items: center; min-height: 1.875rem; padding: 0 0.75rem; border-radius: 999px;
+  font-size: 0.9375rem; font-weight: 700; color: #1A1A1A; white-space: nowrap;
+}
+.nl-tag-future { background: #FFD23F; }
+.nl-tag-new { background: #7FD9A8; }
+.nl-author { align-self: flex-start; text-align: left; color: var(--nl-accent); font-size: 1.1875rem; font-weight: 600; line-height: 1.3; }
+.nl-author:hover { text-decoration: underline; text-underline-offset: 3px; }
+.nl-filter-chip {
+  display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; padding: 0 0.75rem 0 1.125rem;
+  border-radius: 999px; border: 2px solid var(--nl-accent); background: var(--nl-accent-soft); color: var(--nl-accent);
+  font-size: 1.0625rem; font-weight: 600;
+}
 .nl-cover {
-  border-radius: 3px 8px 8px 3px; object-fit: cover; background: var(--nl-line-soft);
-  box-shadow: inset 6px 0 0 rgba(0, 0, 0, 0.1), 0 6px 14px rgba(40, 30, 10, 0.22);
+  border-radius: 6px; object-fit: cover; background: var(--nl-line-soft);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
-html[data-look="evening"] .nl-cover { box-shadow: 0 0 28px rgba(224, 176, 100, 0.18), 0 6px 14px rgba(0, 0, 0, 0.5); }
+html[data-look="evening"] .nl-cover { box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5); }
+/* A Penguin-style cover for books with no picture: colour band, cream panel, colour band */
+.nl-cover-plain { display: flex; flex-direction: column; overflow: hidden; }
+.nl-cover-plain.hidden { display: none; }
+.nl-cover-plain > i { display: block; height: 24%; flex: none; }
+.nl-cover-plain > span {
+  flex: 1; display: flex; align-items: center; justify-content: center; padding: 0 0.375rem;
+  background: #FBF8F1; color: #1A1A1A; text-align: center; font-size: 0.75rem; font-weight: 700; line-height: 1.15;
+}
 .nl-soft { color: var(--nl-soft); }
 .nl-link { color: var(--nl-accent); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .nl-choice {
   display: inline-flex; flex: 1 1 0; align-items: center; justify-content: center; gap: 0.375rem;
-  min-height: 3.25rem; padding: 0 0.5rem; border-radius: 0.875rem;
+  min-height: 3.125rem; padding: 0 0.75rem; border-radius: 0.875rem;
   border: 2px solid var(--nl-line); background: var(--nl-card); color: var(--nl-ink);
   min-width: 0; text-align: center; line-height: 1.15;
-  font-weight: 700; font-size: 1rem; transition: background-color 0.15s, border-color 0.15s;
+  font-weight: 600; font-size: 1.0625rem; transition: background-color 0.15s, border-color 0.15s;
 }
 .nl-choice-stack { flex-direction: column; gap: 0.2rem; padding: 0.4rem 0.25rem; }
 /* Phones: icon above the label so three choices fit side by side */
 @media (max-width: 480px) {
   .nl-choice { flex-direction: column; gap: 0.2rem; padding: 0.4rem 0.25rem; font-size: 0.9375rem; }
-  .nl-tab { min-width: 0; flex: 1 1 0; padding: 0.375rem 0.25rem; font-size: 0.75rem; text-align: center; }
+  .nl-tab { padding: 0 0.75rem; font-size: 1rem; }
+  .nl-tag { font-size: 0.875rem; padding: 0 0.625rem; }
 }
 .nl-choice:hover:not(:disabled) { background: var(--nl-raised); }
-.nl-choice[aria-pressed="true"] { border-color: var(--nl-accent); background: var(--nl-accent); color: var(--nl-on-accent); }
+.nl-choice[aria-pressed="true"] { border-color: var(--nl-accent); background: var(--nl-accent-soft); color: var(--nl-accent); }
+.nl-choice-main { border-color: var(--nl-accent); background: var(--nl-accent); color: var(--nl-on-accent); }
+.nl-choice-main:hover:not(:disabled) { background: var(--nl-accent); filter: brightness(0.92); }
+/* Read March 2026 / Loved it: the same height as the buttons so every card lines up */
+.nl-status {
+  display: inline-flex; align-items: center; gap: 0.375rem; min-height: 3.125rem; padding: 0 1rem; border-radius: 999px;
+  font-size: 1.0625rem; font-weight: 600; background: var(--nl-accent-soft); color: var(--nl-accent);
+}
+.nl-status-loved { background: var(--nl-loved-bg); color: var(--nl-loved); }
 .nl-choice:disabled { opacity: 0.6; }
 .nl-rating[aria-pressed="true"] { border-color: var(--nl-accent); background: var(--nl-accent-soft); color: var(--nl-accent); }
 .nl-rating-loved[aria-pressed="true"] { border-color: var(--nl-loved); background: var(--nl-loved-bg); color: var(--nl-loved); }
@@ -238,9 +291,7 @@ html[data-look="evening"] .nl-cover { box-shadow: 0 0 28px rgba(224, 176, 100, 0
 }
 .nl-pill-loved { background: var(--nl-loved-bg); color: var(--nl-loved); }
 .nl-note {
-  font-family: var(--nl-serif), Georgia, serif; font-style: italic;
+  font-style: italic;
   background: var(--nl-raised); border-radius: 0.75rem; padding: 0.5rem 0.75rem; color: var(--nl-ink);
 }
-.nl-chip-new { background: #FFF1D1; color: #6B4500; }
-html[data-look="evening"] .nl-chip-new { background: #3A3020; color: #F6E3BF; }
 .nl-header button { min-height: 2.75rem; min-width: 2.75rem; }

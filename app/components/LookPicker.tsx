@@ -16,7 +16,7 @@ import {
   type Look,
 } from "@/lib/look"
 
-/** "Look" (Daytime or Evening) and "Accent colour" for the Display settings. Shown with the new look only. */
+/** "Look" (Daytime or Evening) and "Colour" (Penguin orange, green or blue) for the Display settings. Shown with the new look only. */
 export default function LookPicker() {
   const [look, setLook] = useState<Look | null>(null)
   const [accent, setAccent] = useState<Accent | null>(null)
@@ -62,9 +62,9 @@ export default function LookPicker() {
                   className="flex h-12 w-full items-end gap-1.5 rounded-lg px-3 pb-2"
                   style={{ background: option.colors.bg, boxShadow: `inset 0 0 0 1.5px ${option.colors.line}` }}
                 >
-                  <span className="h-6 w-3.5 rounded-sm" style={{ background: "#E9B44C" }} />
-                  <span className="h-8 w-3.5 rounded-sm" style={{ background: ACCENTS[accent][key] }} />
-                  <span className="h-5 w-3.5 rounded-sm" style={{ background: "#9C2F2F" }} />
+                  <span className="h-6 w-3.5 rounded-sm" style={{ background: "#0072BB" }} />
+                  <span className="h-8 w-3.5 rounded-sm" style={{ background: key === "daytime" ? ACCENTS[accent].band : ACCENTS[accent].eveningBand }} />
+                  <span className="h-5 w-3.5 rounded-sm" style={{ background: "#00845A" }} />
                 </span>
                 <span className="flex items-center gap-2 text-base font-bold">
                   <Icon className="h-5 w-5" aria-hidden="true" />
@@ -78,8 +78,8 @@ export default function LookPicker() {
       </fieldset>
 
       <fieldset className="space-y-2">
-        <legend className="mb-2 text-base font-bold">Accent colour</legend>
-        <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label="Accent colour">
+        <legend className="mb-2 text-base font-bold">Colour</legend>
+        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Colour">
           {(Object.entries(ACCENTS) as [Accent, (typeof ACCENTS)[Accent]][]).map(([key, option]) => (
             <button
               key={key}
@@ -90,14 +90,14 @@ export default function LookPicker() {
               className="theme-choice tap-target flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 px-1 py-2 transition-colors"
             >
               <span aria-hidden="true" className="flex h-9 w-9 overflow-hidden rounded-full" style={{ boxShadow: "inset 0 0 0 1px rgba(0,0,0,.15)" }}>
-                <span className="flex-1" style={{ background: option.daytime }} />
-                <span className="flex-1" style={{ background: option.evening }} />
+                <span className="flex-1" style={{ background: option.band }} />
+                <span className="flex-1" style={{ background: option.eveningBand }} />
               </span>
               <span className="text-sm font-bold">{option.label}</span>
             </button>
           ))}
         </div>
-        <p className="text-sm nl-soft">The colour of selected buttons and links. It stays the same in Daytime and Evening.</p>
+        <p className="text-sm nl-soft">The colour of the top bar, selected buttons and author names. It stays the same in Daytime and Evening.</p>
       </fieldset>
     </div>
   )

@@ -25,7 +25,7 @@ import { ChevronDown, ChevronUp, Users, BookOpen, Settings, HelpCircle, Search, 
 import type { Book, User as UserType, Platform, AdvancedFilterState } from "@/lib/types"
 import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics"
 import { normalizeAuthorName } from "./AuthorManager"
-import { saveUserAuthors } from "@/lib/database"
+import { saveUserAuthors, updateBookStatus } from "@/lib/database"
 import { deduplicateBooks, isAllowedLibraryBook, isSpecialEdition, normalizeTitleForGrouping, remapMergedBookIds } from "@/lib/utils"
 import { fetchAuthorBooksWithCache } from "@/lib/apiCache"
 import DataExport from "./DataExport"
@@ -1394,6 +1394,28 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
 
   const currentTheme = colorThemes[colorTheme] || colorThemes.orange
 
+  const unmarkAsRead = (bookId: string, title: string, author: string) => {
+    setReadBooks((prev) => {
+      const newSet = new Set(prev)
+      newSet.delete(bookId)
+      return newSet
+    })
+
+    if (isLoggedIn) {
+      const book = books.find((b) => `${b.title}-${b.author}` === bookId)
+      trackEvent(currentUser, {
+        event_type: ANALYTICS_EVENTS.BOOK_MARKED_UNREAD,
+        book_id: bookId,
+        book_title: title,
+        book_author: author,
+        event_data: {
+          genres: book?.categories || [],
+          timestamp: new Date().toISOString(),
+        },
+      })
+    }
+  }
+
   return (
     <div className={`h-screen flex flex-col overflow-hidden ${highContrast ? 'bg-black' : newLook ? '' : currentTheme.bgGradient}`}>
       {/* Header - Same depth as footer, white text */}
@@ -1411,12 +1433,14 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                   setSelectedGenres([])
                   setAdvancedFilters(defaultAdvancedFilters)
                 }}
-                className={newLook ? "nl-serif flex min-h-[2.75rem] items-center gap-2 text-xl md:text-2xl hover:opacity-80 transition-opacity" : "text-lg md:text-xl font-bold text-white hover:opacity-80 transition-opacity"}
+                className={newLook ? "nl-brand hover:opacity-90 transition-opacity" : "text-lg md:text-xl font-bold text-white hover:opacity-80 transition-opacity"}
                 data-onboarding="welcome"
               >
                 {newLook ? (
                   <>
-                    <BookOpen className="h-7 w-7" style={{ color: "var(--nl-accent)" }} aria-hidden="true" />
+                    <span className="nl-brand-badge" aria-hidden="true">
+                      <BookOpen className="h-6 w-6" strokeWidth={2.2} />
+                    </span>
                     <span className="sr-only lg:not-sr-only">MyBookshelf</span>
                   </>
                 ) : (
@@ -1428,14 +1452,14 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
           {/* Center: Search Bar - More space on mobile */}
           <div className={`flex-1 ${isMobileLayout ? 'mx-2' : newLook ? 'max-w-xl mx-2 lg:mx-6' : 'max-w-xl md:max-w-2xl mx-2 md:mx-8'}`} data-onboarding="search">
             <div className="relative">
-              <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 ${newLook ? "w-5 h-5" : "w-4 h-4"}`} />
+              <Search className={`absolute top-1/2 transform -translate-y-1/2 ${newLook ? "left-4 w-5 h-5 text-[#55554F]" : "left-3 w-4 h-4 text-gray-400"}`} />
               <Input
                 type="text"
                 placeholder={newLook ? (isMobileLayout ? "Search" : "Search books") : "Search books..."}
                 aria-label="Search your books and authors"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={newLook ? "nl-search pl-11 pr-12 w-full placeholder:text-gray-500" : "pl-10 pr-10 w-full text-sm md:text-base bg-white text-black placeholder:text-gray-500"}
+                className={newLook ? "nl-search pl-12 pr-12 w-full" : "pl-10 pr-10 w-full text-sm md:text-base bg-white text-black placeholder:text-gray-500"}
               />
               {searchQuery && (
                 <button
@@ -1450,8 +1474,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
             </div>
           </div>
 
-          {/* Have I read this? (memory tool, opens a search dialog) */}
-          {isLoggedIn && (
+          {/* Have I read this? (memory tool, opens a search dialog). Not in the new look: search covers it. */}
+          {isLoggedIn && !newLook && (
             <HaveIReadThis
               books={books}
               readBooks={readBooks}
@@ -1472,8 +1496,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
           {isMobileLayout ? (
             <DropdownMenu open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="p-2 text-white hover:bg-white/20">
-                  <Menu className="w-5 h-5" />
+                <Button variant="ghost" size="sm" className={`p-2 text-white hover:bg-white/20 ${newLook ? "nl-tool" : ""}`} aria-label="Menu">
+                  <Menu className={newLook ? "w-6 h-6" : "w-5 h-5"} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
@@ -1586,7 +1610,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
             {/* View Dropdown - Hide on mobile */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="hidden md:flex gap-2 text-white hover:bg-white/20 p-2" data-onboarding="view-modes">
+                <Button variant="ghost" size="sm" className={`${newLook ? "hidden" : "hidden md:flex"} gap-2 text-white hover:bg-white/20 p-2`} data-onboarding="view-modes" aria-label="View">
                   {viewMode === "grid" && <Grid3x3 className="w-4 h-4" />}
                   {viewMode === "list" && <List className="w-4 h-4" />}
                   <ChevronDown className="w-3 h-3" />
@@ -1609,8 +1633,8 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
             {/* Sort Dropdown - Hide on mobile */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="hidden md:flex gap-2 text-white hover:bg-white/20 p-2">
-                  <ArrowUpDown className="w-4 h-4" />
+                <Button variant="ghost" size="sm" className={`hidden md:flex gap-2 text-white hover:bg-white/20 p-2 ${newLook ? "nl-tool" : ""}`} aria-label="Sort">
+                  <ArrowUpDown className={newLook ? "w-5 h-5" : "w-4 h-4"} />
                   <span className="hidden lg:inline">Sort</span>
                   <ChevronDown className="w-3 h-3" />
                 </Button>
@@ -1633,6 +1657,21 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                 <DropdownMenuItem onClick={() => setSortBy("pages")}>
                   Most Pages
                 </DropdownMenuItem>
+                {/* New look: the View choice lives here to keep the top bar short */}
+                {newLook && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>View</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => setViewMode("grid")}>
+                      <Grid3x3 className="w-4 h-4 mr-2" />
+                      Cards
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setViewMode("list")}>
+                      <List className="w-4 h-4 mr-2" />
+                      List
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -1640,11 +1679,12 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
             <Button 
               variant="ghost" 
               size="sm" 
-              className="gap-1 md:gap-2 text-white hover:bg-white/20 p-1.5 md:p-2"
+              className={`gap-1 md:gap-2 text-white hover:bg-white/20 p-1.5 md:p-2 ${newLook ? "nl-tool" : ""}`}
               onClick={() => setShowAuthorsDialog(true)}
               data-onboarding="authors"
+              aria-label="Authors"
             >
-              <Users className="w-4 h-4" />
+              <Users className={newLook ? "w-5 h-5" : "w-4 h-4"} />
               <span className="hidden lg:inline">Authors</span>
             </Button>
 
@@ -1652,10 +1692,11 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
             <Button 
               variant="ghost" 
               size="sm" 
-              className="gap-1 md:gap-2 text-white hover:bg-white/20 p-1.5 md:p-2"
+              className={`gap-1 md:gap-2 text-white hover:bg-white/20 p-1.5 md:p-2 ${newLook ? "nl-tool" : ""}`}
               onClick={() => setShowFiltersDialog(true)}
+              aria-label="Filter"
             >
-              <Filter className="w-4 h-4" />
+              <Filter className={newLook ? "w-5 h-5" : "w-4 h-4"} />
               <span className="hidden lg:inline">Filter</span>
             </Button>
 
@@ -1674,10 +1715,40 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
         </div>
       </header>
 
+      {/* Tabs under the header (new look) */}
+      {newLook && (
+        <nav aria-label="Main" className="nl-tabbar flex-shrink-0" data-onboarding="footer">
+          <div className="flex items-stretch gap-1 overflow-x-auto px-2 md:px-5">
+            {([
+              { view: null, label: "All books" },
+              { view: "favorites", label: "Loved" },
+              { view: "want-to-read", label: "Want to read" },
+              { view: "finished", label: "Read" },
+            ] as const).map(({ view, label }) => {
+              const current = view === null ? footerView === null || footerView === "library" : footerView === view
+              return (
+                <button key={label} type="button" className="nl-tab" aria-pressed={current} onClick={() => setFooterView(view)}>
+                  {label}
+                </button>
+              )
+            })}
+            <button type="button" className="nl-tab" onClick={() => setShowSettingsDialog(true)} data-onboarding="settings">
+              Settings
+            </button>
+            {/* On phones Export is in the menu at the top */}
+            {!isMobileLayout && (
+              <button type="button" className="nl-tab" onClick={() => setShowExportDialog(true)}>
+                Export
+              </button>
+            )}
+          </div>
+        </nav>
+      )}
+
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden relative">
         {/* Main Content - Book Grid */}
-        <main className={`flex-1 px-4 md:px-6 py-6 overflow-y-auto ${newLook ? "md:px-8 pb-28" : ""}`} style={{ maxHeight: isMobileLayout ? 'calc(100vh - 180px)' : 'calc(100vh - 140px)' }}>
+        <main className={`flex-1 px-4 md:px-6 py-6 overflow-y-auto ${newLook ? "md:px-7 pt-5 pb-10" : ""}`} style={{ maxHeight: isMobileLayout ? 'calc(100vh - 180px)' : 'calc(100vh - 140px)' }}>
           {isLoggedIn && <UsageModePrompt />}
           <BookDetailsDialog
             target={detailsTarget}
@@ -1688,6 +1759,15 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
               note: detailsTarget ? bookNotes.get(detailsTarget.bookId) ?? "" : "",
             }}
             onClose={() => setDetailsTarget(null)}
+            onNotRead={
+              newLook
+                ? (t) => {
+                    if (currentUser) updateBookStatus(currentUser, t.bookId, "unread")
+                    unmarkAsRead(t.bookId, t.title, t.author)
+                    setDetailsTarget(null)
+                  }
+                : undefined
+            }
             onSave={(bookId, { date, rating, note }) => {
               const update = <V,>(prev: Map<string, V>, value: V | null | "") => {
                 const next = new Map(prev)
@@ -1703,15 +1783,34 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
 
           {/* Reading Progress */}
           {newLook ? (
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-              <h1 className="nl-serif text-3xl md:text-4xl leading-tight">
-                {footerView === "favorites" ? "Books you loved" : footerView === "want-to-read" ? "Want to read" : footerView === "finished" ? "Books you've read" : "Your shelf"}
+            <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+              {/* Tapping the heading clears an author picked from a card */}
+              <h1 className="nl-heading text-[1.75rem] md:text-3xl leading-tight">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAuthors([])}
+                  title={selectedAuthors.length > 0 ? "Show all books" : undefined}
+                  className="min-h-[2.75rem] text-left"
+                >
+                  {footerView === "favorites" ? "Books you loved" : footerView === "want-to-read" ? "Want to read" : footerView === "finished" ? "Books you've read" : "Your shelf"}
+                </button>
               </h1>
-              <p className="text-base nl-soft">
+              <p className="text-[1.0625rem] nl-soft">
                 {filteredAndLimitedBooks.length} {filteredAndLimitedBooks.length === 1 ? "book" : "books"}
                 {" · "}
                 {filteredAndLimitedBooks.filter(book => readBooks.has(`${book.title}-${book.author}`)).length} read
               </p>
+              {selectedAuthors.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedAuthors([])}
+                  className="nl-filter-chip"
+                  aria-label={`Showing only ${selectedAuthors.join(", ")}. Show all books`}
+                >
+                  Only {selectedAuthors.join(", ")}
+                  <X className="h-5 w-5" strokeWidth={2.6} aria-hidden="true" />
+                </button>
+              )}
             </div>
           ) : (
           <div className="mb-4 flex items-center justify-between">
@@ -1743,6 +1842,10 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                 platforms={enabledPlatforms}
                 userId={currentUser}
                 onBookClick={trackRecentlyViewed}
+                onAuthorClick={(author) => {
+                  setSelectedAuthors([author])
+                  document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" })
+                }}
                 highContrast={highContrast}
                 recommendedAuthors={recommendedAuthors}
                 memoryAids={userState.memoryAids || []}
@@ -1826,27 +1929,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                     })
                   }
                 }}
-                onUnmarkAsRead={(bookId, title, author) => {
-                  setReadBooks((prev) => {
-                    const newSet = new Set(prev)
-                    newSet.delete(bookId)
-                    return newSet
-                  })
-
-                  if (isLoggedIn) {
-                    const book = books.find((b) => `${b.title}-${b.author}` === bookId)
-                    trackEvent(currentUser, {
-                      event_type: ANALYTICS_EVENTS.BOOK_MARKED_UNREAD,
-                      book_id: bookId,
-                      book_title: title,
-                      book_author: author,
-                      event_data: {
-                        genres: book?.categories || [],
-                        timestamp: new Date().toISOString(),
-                      },
-                    })
-                  }
-                }}
+                onUnmarkAsRead={unmarkAsRead}
                 onSetBookRating={(bookId, rating) => {
                   setBookRatings((prev) => {
                     const newMap = new Map(prev)
@@ -1927,37 +2010,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
         </div>
 
       {/* Fixed Footer with Icon/Tools */}
-      {newLook ? (
-        <nav aria-label="Main" className="nl-tabbar fixed bottom-0 left-0 right-0 z-50" data-onboarding="footer">
-          <div className="mx-auto flex max-w-3xl items-center justify-around gap-1 px-2 py-2">
-            {([
-              { view: null, label: "All books", Icon: BookOpen },
-              { view: "favorites", label: "Loved", Icon: Heart },
-              { view: "want-to-read", label: "Want to read", Icon: BookmarkPlus },
-              { view: "finished", label: "Read", Icon: BookCheck },
-            ] as const).map(({ view, label, Icon }) => {
-              const current = view === null ? footerView === null || footerView === "library" : footerView === view
-              return (
-                <button key={label} type="button" className="nl-tab" aria-pressed={current} onClick={() => setFooterView(view)}>
-                  <Icon className="h-6 w-6" aria-hidden="true" />
-                  {label}
-                </button>
-              )
-            })}
-            <button type="button" className="nl-tab" onClick={() => setShowSettingsDialog(true)} data-onboarding="settings">
-              <Settings className="h-6 w-6" aria-hidden="true" />
-              Settings
-            </button>
-            {/* On phones Export is in the menu at the top */}
-            {!isMobileLayout && (
-              <button type="button" className="nl-tab" onClick={() => setShowExportDialog(true)}>
-                <FileText className="h-6 w-6" aria-hidden="true" />
-                Export
-              </button>
-            )}
-          </div>
-        </nav>
-      ) : (
+      {newLook ? null : (
       <footer 
         className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 shadow-lg"
         style={{ backgroundColor: currentTheme.footerColor }}
@@ -2083,7 +2136,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
       )}
       
       {/* Spacer to prevent content from being hidden behind fixed footer */}
-      <div className="h-16 md:h-20"></div>
+      {!newLook && <div className="h-16 md:h-20"></div>}
 
       {/* Export Dialog */}
       <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>

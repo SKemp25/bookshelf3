@@ -20,6 +20,7 @@ import {
   Heart,
   ThumbsUp,
   ThumbsDown,
+  Check,
   List,
   X,
   ArrowUpDown,
@@ -28,6 +29,7 @@ import {
 } from "lucide-react"
 import type { Book, Platform } from "@/lib/types"
 import { formatReadDate, type ReadDate } from "@/lib/readDates"
+import { formatBookDate, isJustOut } from "@/lib/bookDates"
 import { updateBookStatus } from "@/lib/database"
 import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -50,6 +52,7 @@ interface BookGridProps {
   bookRatings?: Map<string, "loved" | "liked" | "didnt-like">
   userId?: string // Added userId for database operations
   onBookClick?: (bookId: string) => void // Track recently viewed
+  onAuthorClick?: (author: string) => void // New look: show only this author's books
   highContrast?: boolean // High contrast mode
   recommendedAuthors?: Set<string> // Authors that came from recommendations
   onAddAuthor?: (authorName: string) => void // Add all books by an author
@@ -82,6 +85,7 @@ export default function BookGrid({
   bookRatings = new Map(),
   userId,
   onBookClick,
+  onAuthorClick,
   highContrast = false,
   recommendedAuthors = new Set(),
   onAddAuthor,
@@ -571,49 +575,89 @@ export default function BookGrid({
   })
 
   // New look (Step 4): one card per book with the cover beside the details and
-  // big Read / Want / Pass choices. Uses the same handlers as the older card.
-  const RATING_CHOICES = [
-    { id: "loved", label: "Loved it", Icon: Heart },
-    { id: "liked", label: "Liked it", Icon: ThumbsUp },
-    { id: "didnt-like", label: "Not for me", Icon: ThumbsDown },
-  ] as const
+  // big choices along the bottom, so cards in a row line up. Uses the same
+  // handlers as the older card.
+  const RATING_LABELS = { loved: "Loved it", liked: "Liked it", "didnt-like": "Not for me" } as const
+  const RATING_ICONS = { loved: Heart, liked: ThumbsUp, "didnt-like": ThumbsDown } as const
+  const RATING_CHOICES = (["loved", "liked", "didnt-like"] as const).map((id) => ({ id, label: RATING_LABELS[id], Icon: RATING_ICONS[id] }))
+  // Covers for books with no picture; none of them match the header colour
+  const PLAIN_COVER_COLOURS = ["#00845A", "#0072BB", "#7A3E9D", "#C8102E", "#2A7F86", "#1F3A5F", "#B5862A", "#4E7D2F"]
+  const plainCoverColour = (title: string) => {
+    let h = 0
+    for (const ch of title) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+    return PLAIN_COVER_COLOURS[h % PLAIN_COVER_COLOURS.length]
+  }
 
   const renderNewLookCard = (book: Book, index: number) => {
     const bookId = `${book.title}-${book.author}`
     const status = getReadingStatus(bookId)
     const isExpanded = expandedDescriptions.has(book.id)
-    const isUpcoming = isUpcomingRelease(book.publishedDate || "")
+    const isFuture = isUpcomingRelease(book.publishedDate || "")
+    const justOut = !isFuture && isJustOut(book.publishedDate)
     const isBookUpdating = isUpdating.has(bookId)
     const bookAuthor = getAuthorName(book)
     const rating = bookRatings.get(bookId)
     const note = bookNotes.get(bookId)
     const date = readDates.get(bookId)
+    const stop = (e: React.MouseEvent) => e.stopPropagation()
     const editDetails = (e: React.MouseEvent) => {
       e.stopPropagation()
       onEditNote?.(bookId, book.title, book.author)
     }
     const facts = [
-      book.publishedDate && !isUpcoming ? formatPublishedDate(book.publishedDate) : null,
+      book.publishedDate && !isFuture && !justOut ? formatPublishedDate(book.publishedDate) : null,
       book.pageCount && book.pageCount > 0 ? `${book.pageCount} pages` : null,
       book.language && book.language !== "en" ? book.language.toUpperCase() : null,
     ].filter(Boolean)
+    const coverColour = plainCoverColour(book.title)
+
+    const wantButton = (
+      <button
+        type="button"
+        aria-pressed={status === "want"}
+        onClick={(e) => {
+          e.stopPropagation()
+          handleMarkAsWant(bookId, book.title, bookAuthor)
+        }}
+        disabled={isBookUpdating}
+        className="nl-choice"
+        title={status === "want" ? "Remove from want to read" : "Add to want to read"}
+      >
+        {status === "want" ? "On my list" : "Want to read"}
+      </button>
+    )
+    const passButton = (
+      <button
+        type="button"
+        aria-pressed={status === "pass"}
+        onClick={(e) => {
+          e.stopPropagation()
+          handleToggleDontWant(bookId, book.title, bookAuthor)
+        }}
+        disabled={isBookUpdating}
+        className="nl-choice"
+        title={status === "pass" ? "Remove from not for me" : "Mark as not for me"}
+      >
+        Not for me
+      </button>
+    )
 
     return (
       <article
         key={`${book.id}-${index}`}
         data-book-id={book.id}
-        className="nl-card flex flex-col gap-4 p-4 md:p-5"
+        className={`nl-card flex h-full flex-col gap-4 p-4 md:p-[1.125rem] ${isFuture ? "nl-card-future" : justOut ? "nl-card-new" : ""}`}
         onClick={() => onBookClick?.(book.id)}
         style={{ cursor: onBookClick ? "pointer" : "default" }}
       >
-        <div className="flex gap-4 md:gap-5">
+        <div className="flex gap-4 md:gap-[1.125rem]">
           {showCovers && (
             <div className="flex-shrink-0">
               {book.thumbnail ? (
                 <img
                   src={book.thumbnail}
                   alt=""
-                  className="nl-cover h-36 w-24 md:h-[10.5rem] md:w-28"
+                  className="nl-cover h-[8.625rem] w-[5.75rem]"
                   loading={index < 6 ? "eager" : "lazy"}
                   fetchPriority={index < 6 ? "high" : undefined}
                   onError={(e) => {
@@ -633,45 +677,44 @@ export default function BookGrid({
                 />
               ) : null}
               <div
-                className={`nl-cover flex h-36 w-24 items-end p-2 md:h-[10.5rem] md:w-28 ${book.thumbnail ? "hidden" : ""}`}
+                className={`nl-cover nl-cover-plain h-[8.625rem] w-[5.75rem] ${book.thumbnail ? "hidden" : ""}`}
                 aria-hidden="true"
               >
-                <span className="nl-serif text-sm leading-tight">{book.title}</span>
+                <i style={{ background: coverColour }} />
+                <span>{book.title}</span>
+                <i style={{ background: coverColour }} />
               </div>
             </div>
           )}
 
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <h3 className="nl-serif text-xl leading-snug md:text-[1.375rem]">{book.title}</h3>
-            <p className="text-base nl-soft">{bookAuthor}</p>
-            {facts.length > 0 && <p className="text-sm nl-soft">{facts.join(" · ")}</p>}
-            <div className="flex flex-wrap gap-2 pt-1">
-              {isUpcoming && book.publishedDate && (
-                <span className="nl-pill nl-chip-new">
-                  <Calendar className="h-4 w-4" aria-hidden="true" />
-                  Coming {formatUpcomingDate(book.publishedDate)}
-                </span>
-              )}
-              {status === "read" && (
-                <span className="nl-pill">
-                  <BookCheck className="h-4 w-4" aria-hidden="true" />
-                  {date ? `${"before" in date ? "Read" : "Finished"} ${formatReadDate(date).replace("Before", "before")}` : "Read"}
-                </span>
-              )}
-              {status === "read" && rating === "loved" && (
-                <span className="nl-pill nl-pill-loved">
-                  <Heart className="h-4 w-4 fill-current" aria-hidden="true" />
-                  Loved it
-                </span>
-              )}
-              {status === "want" && (
-                <span className="nl-pill">
-                  <BookmarkPlus className="h-4 w-4" aria-hidden="true" />
-                  Want to read
-                </span>
-              )}
-              {status === "pass" && <span className="nl-pill">Passed</span>}
-            </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <h3 className="nl-heading line-clamp-2 text-[1.375rem] leading-tight">{book.title}</h3>
+            {onAuthorClick ? (
+              <button
+                type="button"
+                className="nl-author"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onAuthorClick(bookAuthor)
+                }}
+                title={`Show only books by ${bookAuthor}`}
+              >
+                {bookAuthor}
+              </button>
+            ) : (
+              <p className="nl-author">{bookAuthor}</p>
+            )}
+            {(isFuture || justOut || facts.length > 0) && (
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                {isFuture && book.publishedDate && (
+                  <span className="nl-tag nl-tag-future">Future · {formatBookDate(book.publishedDate)}</span>
+                )}
+                {justOut && book.publishedDate && (
+                  <span className="nl-tag nl-tag-new">Just out · {formatBookDate(book.publishedDate)}</span>
+                )}
+                {facts.length > 0 && <span className="text-base nl-soft">{facts.join(" · ")}</span>}
+              </div>
+            )}
             {status === "read" && note && (
               <button
                 type="button"
@@ -679,72 +722,94 @@ export default function BookGrid({
                 className="nl-note mt-1 text-left text-base"
                 aria-label={`Your note on ${book.title}: ${note}. Tap to edit.`}
               >
-                “{note}”
+                <span className="line-clamp-1">“{note}”</span>
               </button>
             )}
-            {status === "read" && canEditDetails && (
-              <button type="button" onClick={editDetails} className="nl-link min-h-[2.75rem] self-start text-base">
-                {date || note ? "Edit details" : "Add when you read it"}
-              </button>
-            )}
+            {book.description ? (
+              <div className="mt-1">
+                <p className={`text-[1.0625rem] leading-normal ${isExpanded ? "" : "line-clamp-2"}`}>{book.description}</p>
+                {book.description.length > 120 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleDescription(book.id)
+                    }}
+                    className="nl-link min-h-[2.75rem] text-base"
+                  >
+                    {isExpanded ? "Show less" : "Read more"}
+                  </button>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
 
-        {book.description ? (
-          <div className="space-y-1">
-            <p className={`text-base leading-relaxed ${isExpanded ? "" : "line-clamp-3"}`}>{book.description}</p>
-            {book.description.length > 180 && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  toggleDescription(book.id)
-                }}
-                className="nl-link min-h-[2.75rem] text-base"
-              >
-                {isExpanded ? "Show less" : "Read more"}
-              </button>
-            )}
-          </div>
-        ) : null}
-
         <div className="mt-auto space-y-3">
           {status === "read" ? (
-            <div className="space-y-2">
-              <div role="group" aria-label={`How was ${book.title}?`} className="flex gap-2">
-                {RATING_CHOICES.map(({ id, label, Icon }) => (
+            canEditDetails ? (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button type="button" onClick={editDetails} className="nl-status">
+                  <Check className="h-5 w-5" strokeWidth={2.6} aria-hidden="true" />
+                  {date ? `Read ${formatReadDate(date).replace("Before", "before")}` : "Read"}
+                </button>
+                {rating && (
+                  <button type="button" onClick={editDetails} className={`nl-status ${rating === "loved" ? "nl-status-loved" : ""}`}>
+                    {(() => {
+                      const Icon = RATING_ICONS[rating as keyof typeof RATING_ICONS]
+                      return Icon ? <Icon className="h-[1.125rem] w-[1.125rem] fill-current" aria-hidden="true" /> : null
+                    })()}
+                    {RATING_LABELS[rating as keyof typeof RATING_LABELS]}
+                  </button>
+                )}
+                {/* The box it opens also has "Not read after all" */}
+                <button type="button" onClick={editDetails} className="nl-link min-h-[2.75rem] px-1 text-[1.0625rem]">
+                  Change
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div role="group" aria-label={`How was ${book.title}?`} className="flex gap-2">
+                  {RATING_CHOICES.map(({ id, label, Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={rating === id}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSetBookRating?.(bookId, rating === id ? null : id)
+                      }}
+                      className={`nl-choice nl-choice-stack nl-rating ${id === "loved" ? "nl-rating-loved" : ""}`}
+                    >
+                      <Icon className={`h-5 w-5 flex-shrink-0 ${rating === id ? "fill-current" : ""}`} aria-hidden="true" />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+                {onUnmarkAsRead && (
                   <button
-                    key={id}
                     type="button"
-                    aria-pressed={rating === id}
                     onClick={(e) => {
                       e.stopPropagation()
-                      onSetBookRating?.(bookId, rating === id ? null : id)
+                      handleUnmarkAsRead(bookId, book.title, bookAuthor)
                     }}
-                    className={`nl-choice nl-choice-stack nl-rating ${id === "loved" ? "nl-rating-loved" : ""}`}
+                    disabled={isBookUpdating}
+                    className="flex min-h-[2.75rem] items-center gap-1.5 text-base font-semibold nl-soft hover:underline"
                   >
-                    <Icon className={`h-5 w-5 flex-shrink-0 ${rating === id ? "fill-current" : ""}`} aria-hidden="true" />
-                    <span>{label}</span>
+                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                    Not read after all
                   </button>
-                ))}
+                )}
               </div>
-              {onUnmarkAsRead && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleUnmarkAsRead(bookId, book.title, bookAuthor)
-                  }}
-                  disabled={isBookUpdating}
-                  className="flex min-h-[2.75rem] items-center gap-1.5 text-sm font-bold nl-soft hover:underline"
-                >
-                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                  Not read after all
-                </button>
-              )}
+            )
+          ) : isFuture ? (
+            // Not out yet, so it can't have been read
+            <div role="group" aria-label={`Your choice for ${book.title}`} className="flex gap-2.5">
+              {wantButton}
+              {passButton}
             </div>
           ) : (
-            <div role="group" aria-label={`Your choice for ${book.title}`} className="flex gap-2">
+            <div role="group" aria-label={`Your choice for ${book.title}`} className="flex gap-2.5">
               <button
                 type="button"
                 onClick={(e) => {
@@ -752,45 +817,18 @@ export default function BookGrid({
                   handleMarkAsRead(bookId, book.title, bookAuthor)
                 }}
                 disabled={isBookUpdating}
-                className="nl-choice"
+                className="nl-choice nl-choice-main"
               >
-                <BookCheck className="h-5 w-5" aria-hidden="true" />
-                Read
+                I&apos;ve read it
               </button>
-              <button
-                type="button"
-                aria-pressed={status === "want"}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleMarkAsWant(bookId, book.title, bookAuthor)
-                }}
-                disabled={isBookUpdating}
-                className="nl-choice"
-                title={status === "want" ? "Remove from want to read" : "Add to want to read"}
-              >
-                <BookmarkPlus className="h-5 w-5" aria-hidden="true" />
-                Want
-              </button>
-              <button
-                type="button"
-                aria-pressed={status === "pass"}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleToggleDontWant(bookId, book.title, bookAuthor)
-                }}
-                disabled={isBookUpdating}
-                className="nl-choice"
-                title={status === "pass" ? "Remove from pass list" : "Mark as pass"}
-              >
-                <BookX className="h-5 w-5" aria-hidden="true" />
-                Pass
-              </button>
+              {wantButton}
+              {passButton}
             </div>
           )}
 
           {platforms.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-bold nl-soft">Find it:</span>
+            <div className="flex flex-wrap items-center gap-2" onClick={stop}>
+              <span className="text-base font-semibold nl-soft">Find it:</span>
               {platforms.slice(0, 4).map((platform, i) => (
                 <button
                   key={`${platform.name}-${platform.category || "default"}-${i}`}
@@ -799,7 +837,7 @@ export default function BookGrid({
                     e.stopPropagation()
                     openPlatformLink(book, platform)
                   }}
-                  className="min-h-[2.75rem] rounded-xl border-2 px-3 text-sm font-bold"
+                  className="min-h-[2.75rem] rounded-xl border-2 px-3 text-base font-semibold"
                   style={{ borderColor: "var(--nl-line)" }}
                 >
                   {platform.name === "Books" ? "Print" : platform.name === "OverDrive/Libby" ? "Library" : platform.name}
@@ -818,7 +856,7 @@ export default function BookGrid({
         <div className="w-28 h-28 mx-auto mb-6 opacity-30">
           <BookOpen className={`w-full h-full ${newLook ? "" : emptyStateIconClass}`} />
         </div>
-        <h3 className={`text-2xl md:text-3xl font-semibold mb-3 ${newLook ? "nl-serif" : emptyStateTitleClass}`}>Start Your Personal Library</h3>
+        <h3 className={`text-2xl md:text-3xl font-semibold mb-3 ${newLook ? "nl-heading" : emptyStateTitleClass}`}>Start Your Personal Library</h3>
         <p className={`text-lg md:text-xl max-w-md mx-auto ${newLook ? "nl-soft" : emptyStateDescClass}`}>Add your favorite authors to discover and organize your books.</p>
       </div>
     )
@@ -968,7 +1006,7 @@ export default function BookGrid({
 
   return (
     <>
-      <div className={newLook ? "grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3" : "grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"}>
+      <div className={newLook ? "grid gap-4 grid-cols-1 lg:grid-cols-2" : "grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"}>
         {sortedBooks.map((book, index) => {
           if (newLook) return renderNewLookCard(book, index)
           const bookId = `${book.title}-${book.author}`

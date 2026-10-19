@@ -23,8 +23,9 @@ The other features stay in place.
 
 ## 3. Put the whole app back to a stable point
 
-Two saved snapshots:
+Three saved snapshots:
 
+- `stable-2026-10-19b` holds the app as it was on the evening of October 19, 2026, with the first new look (warm paper, serif titles, three cards per row), just before the orange Penguin look.
 - `stable-2026-10-19` holds the app exactly as it was on October 19, 2026, just before the new look (Daytime and Evening). To go back to the old look only, the quickest way is to set `newLook` to `false` in `lib/features.ts` (see 1 above).
 - `stable-2026-10-15` holds the app as it was on October 15, 2026, before any of the design features were added.
 
