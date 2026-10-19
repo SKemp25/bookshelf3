@@ -6,6 +6,7 @@ import AuthorManager from "./AuthorManager"
 import BookGrid from "./BookGrid"
 import TextSizePicker from "./TextSizePicker"
 import UsageModePrompt from "./UsageModePrompt"
+import HaveIReadThis from "./HaveIReadThis"
 import UsageModeSetting from "./UsageModeSetting"
 import BookFilters from "./BookFilters"
 import AdvancedFilters from "./AdvancedFilters"
@@ -1565,6 +1566,20 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
         {/* Main Content - Book Grid */}
         <main className="flex-1 px-4 md:px-6 py-6 overflow-y-auto" style={{ maxHeight: isMobileLayout ? 'calc(100vh - 180px)' : 'calc(100vh - 140px)' }}>
           {isLoggedIn && <UsageModePrompt />}
+          {isLoggedIn && (
+            <HaveIReadThis
+              books={books}
+              readBooks={readBooks}
+              wantToReadBooks={wantToReadBooks}
+              dontWantBooks={dontWantBooks}
+              bookRatings={bookRatings}
+              onShowOnShelf={(title) => {
+                setFooterView(null)
+                setSearchQuery(title)
+                requestAnimationFrame(() => document.querySelector('[data-tour="books"]')?.scrollIntoView({ behavior: "smooth", block: "start" }))
+              }}
+            />
+          )}
 
           {/* Reading Progress */}
           <div className="mb-4 flex items-center justify-between">

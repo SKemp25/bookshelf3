@@ -1,7 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { features } from "./features.ts"
-import { TEXT_SIZES } from "./textSize.ts"
 import { DEFAULT_USAGE_MODE, TOOL_MIN_MODE, USAGE_MODES, isToolOn, modeIncludesTool, normalizeUsageMode } from "./usageMode.ts"
 
 describe("how MyBookshelf helps", () => {
@@ -12,9 +11,8 @@ describe("how MyBookshelf helps", () => {
     }
   })
 
-  it("gives each choice a real text size, growing with the help offered", () => {
-    const percents = Object.values(USAGE_MODES).map((m) => TEXT_SIZES[m.textSize].rootPercent)
-    assert.deepEqual([...percents].sort((a, b) => a - b), percents)
+  it("leaves text size to its own setting", () => {
+    for (const mode of Object.values(USAGE_MODES)) assert.equal("textSize" in mode, false)
   })
 
   it("layers tools: more help includes everything less help has", () => {

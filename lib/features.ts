@@ -22,7 +22,7 @@ export const features = {
   usageMode: true,
 
   // Step 2: everyday memory help
-  haveIReadThis: false,
+  haveIReadThis: true,
   notePrompt: false,
   nextInSeries: false,
   recentlyViewed: false,
