@@ -37,7 +37,7 @@ export const features = {
   yearInBooks: false,
 
   // Step 4: the new look
-  newLook: false,
+  newLook: true,
   ipadSideBySide: false,
 }
 

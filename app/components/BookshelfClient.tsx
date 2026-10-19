@@ -5,6 +5,7 @@ import AccountManager from "./AccountManager"
 import AuthorManager from "./AuthorManager"
 import BookGrid from "./BookGrid"
 import TextSizePicker from "./TextSizePicker"
+import LookPicker from "./LookPicker"
 import UsageModePrompt from "./UsageModePrompt"
 import HaveIReadThis from "./HaveIReadThis"
 import BookDetailsDialog, { type DetailsTarget } from "./BookDetailsDialog"
@@ -203,6 +204,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
   const { mode: usageMode } = useUsageMode()
   // The "When did you finish it?" box: read dates for everyone, plus a note field for the memory modes.
   const canAskDetails = isFeatureOn("readDates") || isToolOn("notePrompt", usageMode)
+  const newLook = isFeatureOn("newLook")
   const [friends, setFriends] = useState<string[]>([])
   const [selectedAuthors, setSelectedAuthors] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<string>("newest")
@@ -653,8 +655,9 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('bookshelf_color_theme', colorTheme)
-      // Lets newer components (and dialogs, which render outside this tree) follow the chosen colour theme
-      document.documentElement.style.setProperty('--theme-accent', (colorThemes[colorTheme] || colorThemes.orange).footerColor)
+      // Lets newer components (and dialogs, which render outside this tree) follow the chosen colour theme.
+      // The new look sets this from its own accent colour instead (lib/look.ts).
+      if (!newLook) document.documentElement.style.setProperty('--theme-accent', (colorThemes[colorTheme] || colorThemes.orange).footerColor)
     }
   }, [colorTheme])
 
@@ -1392,11 +1395,11 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
   const currentTheme = colorThemes[colorTheme] || colorThemes.orange
 
   return (
-    <div className={`h-screen flex flex-col overflow-hidden ${highContrast ? 'bg-black' : currentTheme.bgGradient}`}>
+    <div className={`h-screen flex flex-col overflow-hidden ${highContrast ? 'bg-black' : newLook ? '' : currentTheme.bgGradient}`}>
       {/* Header - Same depth as footer, white text */}
       <header
-        className={`sticky top-0 z-50 text-white shadow-sm ${highContrast ? 'bg-black border-b-4 border-white' : ''}`}
-        style={!highContrast ? { backgroundColor: currentTheme.footerColor } : undefined}
+        className={`sticky top-0 z-50 text-white shadow-sm ${highContrast ? 'bg-black border-b-4 border-white' : newLook ? 'nl-header' : ''}`}
+        style={!highContrast && !newLook ? { backgroundColor: currentTheme.footerColor } : undefined}
       >
         <div className="flex items-center justify-between px-4 md:px-6 py-3 gap-2 md:gap-4">
           {/* Left: App Title */}
@@ -1408,23 +1411,31 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                   setSelectedGenres([])
                   setAdvancedFilters(defaultAdvancedFilters)
                 }}
-                className="text-lg md:text-xl font-bold text-white hover:opacity-80 transition-opacity"
+                className={newLook ? "nl-serif flex min-h-[2.75rem] items-center gap-2 text-xl md:text-2xl hover:opacity-80 transition-opacity" : "text-lg md:text-xl font-bold text-white hover:opacity-80 transition-opacity"}
                 data-onboarding="welcome"
               >
-                MY BOOKCASE
+                {newLook ? (
+                  <>
+                    <BookOpen className="h-7 w-7" style={{ color: "var(--nl-accent)" }} aria-hidden="true" />
+                    <span className="sr-only lg:not-sr-only">MyBookshelf</span>
+                  </>
+                ) : (
+                  "MY BOOKCASE"
+                )}
               </button>
             </div>
 
           {/* Center: Search Bar - More space on mobile */}
-          <div className={`flex-1 ${isMobileLayout ? 'mx-2' : 'max-w-xl md:max-w-2xl mx-2 md:mx-8'}`} data-onboarding="search">
+          <div className={`flex-1 ${isMobileLayout ? 'mx-2' : newLook ? 'max-w-xl mx-2 lg:mx-6' : 'max-w-xl md:max-w-2xl mx-2 md:mx-8'}`} data-onboarding="search">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 ${newLook ? "w-5 h-5" : "w-4 h-4"}`} />
               <Input
                 type="text"
-                placeholder="Search books..."
+                placeholder={newLook ? (isMobileLayout ? "Search" : "Search books") : "Search books..."}
+                aria-label="Search your books and authors"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-10 w-full text-sm md:text-base bg-white text-black placeholder:text-gray-500"
+                className={newLook ? "nl-search pl-11 pr-12 w-full placeholder:text-gray-500" : "pl-10 pr-10 w-full text-sm md:text-base bg-white text-black placeholder:text-gray-500"}
               />
               {searchQuery && (
                 <button
@@ -1666,7 +1677,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden relative">
         {/* Main Content - Book Grid */}
-        <main className="flex-1 px-4 md:px-6 py-6 overflow-y-auto" style={{ maxHeight: isMobileLayout ? 'calc(100vh - 180px)' : 'calc(100vh - 140px)' }}>
+        <main className={`flex-1 px-4 md:px-6 py-6 overflow-y-auto ${newLook ? "md:px-8 pb-28" : ""}`} style={{ maxHeight: isMobileLayout ? 'calc(100vh - 180px)' : 'calc(100vh - 140px)' }}>
           {isLoggedIn && <UsageModePrompt />}
           <BookDetailsDialog
             target={detailsTarget}
@@ -1691,6 +1702,18 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
           />
 
           {/* Reading Progress */}
+          {newLook ? (
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+              <h1 className="nl-serif text-3xl md:text-4xl leading-tight">
+                {footerView === "favorites" ? "Books you loved" : footerView === "want-to-read" ? "Want to read" : footerView === "finished" ? "Books you've read" : "Your shelf"}
+              </h1>
+              <p className="text-base nl-soft">
+                {filteredAndLimitedBooks.length} {filteredAndLimitedBooks.length === 1 ? "book" : "books"}
+                {" · "}
+                {filteredAndLimitedBooks.filter(book => readBooks.has(`${book.title}-${book.author}`)).length} read
+              </p>
+            </div>
+          ) : (
           <div className="mb-4 flex items-center justify-between">
             <div className="bg-white border-2 border-black rounded-lg px-3 py-1">
                     <span className="text-black font-black text-xs">
@@ -1703,6 +1726,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                   </span>
                 </div>
               </div>
+          )}
 
               <div data-tour="books" data-onboarding="book-actions">
                 <BookGrid
@@ -1903,6 +1927,37 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
         </div>
 
       {/* Fixed Footer with Icon/Tools */}
+      {newLook ? (
+        <nav aria-label="Main" className="nl-tabbar fixed bottom-0 left-0 right-0 z-50" data-onboarding="footer">
+          <div className="mx-auto flex max-w-3xl items-center justify-around gap-1 px-2 py-2">
+            {([
+              { view: null, label: "All books", Icon: BookOpen },
+              { view: "favorites", label: "Loved", Icon: Heart },
+              { view: "want-to-read", label: "Want to read", Icon: BookmarkPlus },
+              { view: "finished", label: "Read", Icon: BookCheck },
+            ] as const).map(({ view, label, Icon }) => {
+              const current = view === null ? footerView === null || footerView === "library" : footerView === view
+              return (
+                <button key={label} type="button" className="nl-tab" aria-pressed={current} onClick={() => setFooterView(view)}>
+                  <Icon className="h-6 w-6" aria-hidden="true" />
+                  {label}
+                </button>
+              )
+            })}
+            <button type="button" className="nl-tab" onClick={() => setShowSettingsDialog(true)} data-onboarding="settings">
+              <Settings className="h-6 w-6" aria-hidden="true" />
+              Settings
+            </button>
+            {/* On phones Export is in the menu at the top */}
+            {!isMobileLayout && (
+              <button type="button" className="nl-tab" onClick={() => setShowExportDialog(true)}>
+                <FileText className="h-6 w-6" aria-hidden="true" />
+                Export
+              </button>
+            )}
+          </div>
+        </nav>
+      ) : (
       <footer 
         className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 shadow-lg"
         style={{ backgroundColor: currentTheme.footerColor }}
@@ -2025,6 +2080,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
           </Button>
         </div>
       </footer>
+      )}
       
       {/* Spacer to prevent content from being hidden behind fixed footer */}
       <div className="h-16 md:h-20"></div>
@@ -2725,8 +2781,10 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
 
                     <TextSizePicker />
 
-                    {/* Color Theme Selector */}
-                    <div className="space-y-2">
+                    <LookPicker />
+
+                    {/* Color Theme Selector (replaced by Look and Accent colour in the new look) */}
+                    {!newLook && <div className="space-y-2">
                       <Label className="text-sm text-orange-700">Color Theme</Label>
                       <div className="grid grid-cols-2 gap-2">
                         {(Object.entries(colorThemes) as [ColorTheme, typeof colorThemes[ColorTheme]][]).map(([key, theme]) => {
@@ -2773,7 +2831,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                           )
                         })}
                       </div>
-                    </div>
+                    </div>}
 
                     {/* High Contrast Toggle */}
                     <div className="flex items-center justify-between space-x-2">
@@ -3279,8 +3337,10 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
 
                     <TextSizePicker />
 
-                    {/* Color Theme Selection */}
-                    <div className="space-y-3">
+                    <LookPicker />
+
+                    {/* Color Theme Selection (replaced by Look and Accent colour in the new look) */}
+                    {!newLook && <div className="space-y-3">
                       <h4 className="text-red-600 font-bold text-xs uppercase tracking-wide">Color Theme</h4>
                       <div className="grid grid-cols-2 gap-3">
                         {Object.entries(colorThemes).map(([key, theme]) => {
@@ -3327,7 +3387,7 @@ export default function BookshelfClient({ user, userProfile }: BookshelfClientPr
                           )
                         })}
                       </div>
-                    </div>
+                    </div>}
 
                     {/* High Contrast Toggle */}
                     <div className="flex items-center justify-between space-x-2">

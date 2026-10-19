@@ -2,11 +2,17 @@ import type React from "react"
 import type { Metadata } from "next"
 import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
+import { Atkinson_Hyperlegible, Literata } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
 import ErrorBoundary from "./components/ErrorBoundary"
 import { isFeatureOn } from "@/lib/features"
 import { textSizeBootScript } from "@/lib/textSize"
+import { lookBootScript } from "@/lib/look"
+
+// Fonts for the new look: a book typeface for titles, a very legible one for everything else
+const literata = Literata({ subsets: ["latin"], weight: ["400", "600"], style: ["normal", "italic"], variable: "--nl-serif", display: "swap" })
+const atkinson = Atkinson_Hyperlegible({ subsets: ["latin"], weight: ["400", "700"], variable: "--nl-sans", display: "swap" })
 
 export const metadata: Metadata = {
   title: "My Bookcase - Personal Reading Tracker",
@@ -28,7 +34,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="antialiased" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={isFeatureOn("newLook") ? `antialiased ${literata.variable} ${atkinson.variable}` : "antialiased"}
+      suppressHydrationWarning
+    >
       <head>
         <style>{`
 html {
@@ -40,6 +50,7 @@ html {
         {isFeatureOn("largerButtonsAndText") && (
           <script dangerouslySetInnerHTML={{ __html: textSizeBootScript() }} />
         )}
+        {isFeatureOn("newLook") && <script dangerouslySetInnerHTML={{ __html: lookBootScript() }} />}
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#ea580c" />
         <meta name="mobile-web-app-capable" content="yes" />

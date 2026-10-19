@@ -31,6 +31,7 @@ import { formatReadDate, type ReadDate } from "@/lib/readDates"
 import { updateBookStatus } from "@/lib/database"
 import { useToast } from "@/hooks/use-toast"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { isFeatureOn } from "@/lib/features"
 
 interface BookGridProps {
   books: Book[]
@@ -96,6 +97,7 @@ export default function BookGrid({
   onEditNote,
 }: BookGridProps) {
   const showCovers = memoryAids.includes("Show book covers")
+  const newLook = isFeatureOn("newLook")
 
   // When it was read and the reader's note sit above the publisher's description.
   // Tapping either opens the "When did you finish it?" box to change them.
@@ -568,14 +570,256 @@ export default function BookGrid({
     }
   })
 
+  // New look (Step 4): one card per book with the cover beside the details and
+  // big Read / Want / Pass choices. Uses the same handlers as the older card.
+  const RATING_CHOICES = [
+    { id: "loved", label: "Loved it", Icon: Heart },
+    { id: "liked", label: "Liked it", Icon: ThumbsUp },
+    { id: "didnt-like", label: "Not for me", Icon: ThumbsDown },
+  ] as const
+
+  const renderNewLookCard = (book: Book, index: number) => {
+    const bookId = `${book.title}-${book.author}`
+    const status = getReadingStatus(bookId)
+    const isExpanded = expandedDescriptions.has(book.id)
+    const isUpcoming = isUpcomingRelease(book.publishedDate || "")
+    const isBookUpdating = isUpdating.has(bookId)
+    const bookAuthor = getAuthorName(book)
+    const rating = bookRatings.get(bookId)
+    const note = bookNotes.get(bookId)
+    const date = readDates.get(bookId)
+    const editDetails = (e: React.MouseEvent) => {
+      e.stopPropagation()
+      onEditNote?.(bookId, book.title, book.author)
+    }
+    const facts = [
+      book.publishedDate && !isUpcoming ? formatPublishedDate(book.publishedDate) : null,
+      book.pageCount && book.pageCount > 0 ? `${book.pageCount} pages` : null,
+      book.language && book.language !== "en" ? book.language.toUpperCase() : null,
+    ].filter(Boolean)
+
+    return (
+      <article
+        key={`${book.id}-${index}`}
+        data-book-id={book.id}
+        className="nl-card flex flex-col gap-4 p-4 md:p-5"
+        onClick={() => onBookClick?.(book.id)}
+        style={{ cursor: onBookClick ? "pointer" : "default" }}
+      >
+        <div className="flex gap-4 md:gap-5">
+          {showCovers && (
+            <div className="flex-shrink-0">
+              {book.thumbnail ? (
+                <img
+                  src={book.thumbnail}
+                  alt=""
+                  className="nl-cover h-36 w-24 md:h-[10.5rem] md:w-28"
+                  loading={index < 6 ? "eager" : "lazy"}
+                  fetchPriority={index < 6 ? "high" : undefined}
+                  onError={(e) => {
+                    const img = e.currentTarget
+                    const fallbacks = (book as any).coverFallbacks
+                    if (fallbacks?.isbn && img.src !== fallbacks.isbn) {
+                      img.src = fallbacks.isbn
+                      return
+                    }
+                    if (fallbacks?.olid && img.src !== fallbacks.olid) {
+                      img.src = fallbacks.olid
+                      return
+                    }
+                    img.style.display = "none"
+                    img.nextElementSibling?.classList.remove("hidden")
+                  }}
+                />
+              ) : null}
+              <div
+                className={`nl-cover flex h-36 w-24 items-end p-2 md:h-[10.5rem] md:w-28 ${book.thumbnail ? "hidden" : ""}`}
+                aria-hidden="true"
+              >
+                <span className="nl-serif text-sm leading-tight">{book.title}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <h3 className="nl-serif text-xl leading-snug md:text-[1.375rem]">{book.title}</h3>
+            <p className="text-base nl-soft">{bookAuthor}</p>
+            {facts.length > 0 && <p className="text-sm nl-soft">{facts.join(" · ")}</p>}
+            <div className="flex flex-wrap gap-2 pt-1">
+              {isUpcoming && book.publishedDate && (
+                <span className="nl-pill nl-chip-new">
+                  <Calendar className="h-4 w-4" aria-hidden="true" />
+                  Coming {formatUpcomingDate(book.publishedDate)}
+                </span>
+              )}
+              {status === "read" && (
+                <span className="nl-pill">
+                  <BookCheck className="h-4 w-4" aria-hidden="true" />
+                  {date ? `${"before" in date ? "Read" : "Finished"} ${formatReadDate(date).replace("Before", "before")}` : "Read"}
+                </span>
+              )}
+              {status === "read" && rating === "loved" && (
+                <span className="nl-pill nl-pill-loved">
+                  <Heart className="h-4 w-4 fill-current" aria-hidden="true" />
+                  Loved it
+                </span>
+              )}
+              {status === "want" && (
+                <span className="nl-pill">
+                  <BookmarkPlus className="h-4 w-4" aria-hidden="true" />
+                  Want to read
+                </span>
+              )}
+              {status === "pass" && <span className="nl-pill">Passed</span>}
+            </div>
+            {status === "read" && note && (
+              <button
+                type="button"
+                onClick={editDetails}
+                className="nl-note mt-1 text-left text-base"
+                aria-label={`Your note on ${book.title}: ${note}. Tap to edit.`}
+              >
+                “{note}”
+              </button>
+            )}
+            {status === "read" && canEditDetails && (
+              <button type="button" onClick={editDetails} className="nl-link min-h-[2.75rem] self-start text-base">
+                {date || note ? "Edit details" : "Add when you read it"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {book.description ? (
+          <div className="space-y-1">
+            <p className={`text-base leading-relaxed ${isExpanded ? "" : "line-clamp-3"}`}>{book.description}</p>
+            {book.description.length > 180 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleDescription(book.id)
+                }}
+                className="nl-link min-h-[2.75rem] text-base"
+              >
+                {isExpanded ? "Show less" : "Read more"}
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        <div className="mt-auto space-y-3">
+          {status === "read" ? (
+            <div className="space-y-2">
+              <div role="group" aria-label={`How was ${book.title}?`} className="flex gap-2">
+                {RATING_CHOICES.map(({ id, label, Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={rating === id}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSetBookRating?.(bookId, rating === id ? null : id)
+                    }}
+                    className={`nl-choice nl-choice-stack nl-rating ${id === "loved" ? "nl-rating-loved" : ""}`}
+                  >
+                    <Icon className={`h-5 w-5 flex-shrink-0 ${rating === id ? "fill-current" : ""}`} aria-hidden="true" />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+              {onUnmarkAsRead && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleUnmarkAsRead(bookId, book.title, bookAuthor)
+                  }}
+                  disabled={isBookUpdating}
+                  className="flex min-h-[2.75rem] items-center gap-1.5 text-sm font-bold nl-soft hover:underline"
+                >
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                  Not read after all
+                </button>
+              )}
+            </div>
+          ) : (
+            <div role="group" aria-label={`Your choice for ${book.title}`} className="flex gap-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleMarkAsRead(bookId, book.title, bookAuthor)
+                }}
+                disabled={isBookUpdating}
+                className="nl-choice"
+              >
+                <BookCheck className="h-5 w-5" aria-hidden="true" />
+                Read
+              </button>
+              <button
+                type="button"
+                aria-pressed={status === "want"}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleMarkAsWant(bookId, book.title, bookAuthor)
+                }}
+                disabled={isBookUpdating}
+                className="nl-choice"
+                title={status === "want" ? "Remove from want to read" : "Add to want to read"}
+              >
+                <BookmarkPlus className="h-5 w-5" aria-hidden="true" />
+                Want
+              </button>
+              <button
+                type="button"
+                aria-pressed={status === "pass"}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleToggleDontWant(bookId, book.title, bookAuthor)
+                }}
+                disabled={isBookUpdating}
+                className="nl-choice"
+                title={status === "pass" ? "Remove from pass list" : "Mark as pass"}
+              >
+                <BookX className="h-5 w-5" aria-hidden="true" />
+                Pass
+              </button>
+            </div>
+          )}
+
+          {platforms.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-bold nl-soft">Find it:</span>
+              {platforms.slice(0, 4).map((platform, i) => (
+                <button
+                  key={`${platform.name}-${platform.category || "default"}-${i}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openPlatformLink(book, platform)
+                  }}
+                  className="min-h-[2.75rem] rounded-xl border-2 px-3 text-sm font-bold"
+                  style={{ borderColor: "var(--nl-line)" }}
+                >
+                  {platform.name === "Books" ? "Print" : platform.name === "OverDrive/Libby" ? "Library" : platform.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </article>
+    )
+  }
+
   if (books.length === 0) {
     return (
       <div className="text-center py-12">
         <div className="w-28 h-28 mx-auto mb-6 opacity-30">
-          <BookOpen className={`w-full h-full ${emptyStateIconClass}`} />
+          <BookOpen className={`w-full h-full ${newLook ? "" : emptyStateIconClass}`} />
         </div>
-        <h3 className={`text-2xl md:text-3xl font-semibold mb-3 ${emptyStateTitleClass}`}>Start Your Personal Library</h3>
-        <p className={`text-lg md:text-xl max-w-md mx-auto ${emptyStateDescClass}`}>Add your favorite authors to discover and organize your books.</p>
+        <h3 className={`text-2xl md:text-3xl font-semibold mb-3 ${newLook ? "nl-serif" : emptyStateTitleClass}`}>Start Your Personal Library</h3>
+        <p className={`text-lg md:text-xl max-w-md mx-auto ${newLook ? "nl-soft" : emptyStateDescClass}`}>Add your favorite authors to discover and organize your books.</p>
       </div>
     )
   }
@@ -724,8 +968,9 @@ export default function BookGrid({
 
   return (
     <>
-      <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+      <div className={newLook ? "grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3" : "grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"}>
         {sortedBooks.map((book, index) => {
+          if (newLook) return renderNewLookCard(book, index)
           const bookId = `${book.title}-${book.author}`
           const status = getReadingStatus(bookId)
           const isExpanded = expandedDescriptions.has(book.id)
