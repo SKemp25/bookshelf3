@@ -166,10 +166,14 @@ describe("placeholder titles", () => {
     assert.equal(isPlaceholderTitle({ title: "Untitled" }), true)
     assert.equal(isPlaceholderTitle({ title: "Untitled Rebus Novel" }), true)
     assert.equal(isAllowedLibraryBook({ title: "Untitled", author: "Ian Rankin" }), false)
+    assert.equal(isPlaceholderTitle({ title: "New John Rebus Thriller" }), true)
+    assert.equal(isPlaceholderTitle({ title: "New Cormoran Strike Novel 8" }), true)
   })
 
   it("keeps real titles that contain the word", () => {
     assert.equal(isPlaceholderTitle({ title: "The Untitled Life" }), false)
     assert.equal(isPlaceholderTitle({ title: "Midnight and Blue" }), false)
+    assert.equal(isPlaceholderTitle({ title: "New Moon" }), false)
+    assert.equal(isPlaceholderTitle({ title: "The New Book of Rhymes" }), false)
   })
 })

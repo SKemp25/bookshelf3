@@ -134,6 +134,32 @@ function newestFirst(books: NormalizedBook[]): NormalizedBook[] {
   return [...books].sort((a, b) => year(b) - year(a))
 }
 
+// Book details rarely change, so identical lookups are answered from Vercel's cache
+// for a day instead of spending the Google quota again (only successful answers are kept)
+const CACHE_A_DAY = { next: { revalidate: 60 * 60 * 24 } }
+
+// When Google refuses (daily quota used up, key problem), stop asking it for a while:
+// every refused call still counts against the quota and slows the shelf down
+let googlePausedUntil = 0
+
+function googleAvailable(): boolean {
+  return Date.now() >= googlePausedUntil
+}
+
+async function fetchGoogleJson(url: URL): Promise<any | null> {
+  if (!googleAvailable()) return null
+  const apiKey = process.env.GOOGLE_BOOKS_API_KEY
+  if (apiKey) url.searchParams.set("key", apiKey)
+  const resp = await fetch(url.toString(), { ...CACHE_A_DAY, signal: AbortSignal.timeout(8000) })
+  if (!resp.ok) {
+    if (resp.status === 429 || resp.status === 403 || resp.status === 400) {
+      googlePausedUntil = Date.now() + 10 * 60 * 1000
+    }
+    return null
+  }
+  return resp.json()
+}
+
 async function fetchGoogleOnce(
   query: string,
   maxResults: number,
@@ -147,12 +173,8 @@ async function fetchGoogleOnce(
   googleUrl.searchParams.set("orderBy", orderBy)
   // Without a key Google Books shares a tiny anonymous quota and usually answers 429,
   // which pushes every search onto the Open Library fallback (no descriptions, year-only dates).
-  const apiKey = process.env.GOOGLE_BOOKS_API_KEY
-  if (apiKey) googleUrl.searchParams.set("key", apiKey)
-
-  const resp = await fetch(googleUrl.toString(), { cache: "no-store", signal: AbortSignal.timeout(8000) })
-  if (!resp.ok) return null
-  const data = await resp.json()
+  const data = await fetchGoogleJson(googleUrl)
+  if (!data) return null
   return mapGoogleItems(data?.items)
 }
 
@@ -162,7 +184,7 @@ async function fetchGoogle(
   maxResults: number,
   orderBy: "relevance" | "newest",
 ): Promise<NormalizedBook[] | null> {
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 2 && googleAvailable(); attempt++) {
     try {
       const books = await fetchGoogleOnce(query, maxResults, orderBy)
       if (books && books.length > 0) return books
@@ -221,6 +243,7 @@ function titleKey(title: string): string {
 // but without descriptions. Google answers a plain "title author" query reliably,
 // so fill each book's missing details from that.
 async function fillFromGoogle(book: NormalizedBook): Promise<void> {
+  if (!googleAvailable()) return
   try {
     const found = await fetchGoogleOnce(`${book.title} ${book.author}`, 5, "relevance")
     const matches = (found || []).filter(
@@ -242,19 +265,12 @@ async function fillFromGoogle(book: NormalizedBook): Promise<void> {
   }
 }
 
-// A few at a time, so Google does not refuse a burst of requests
-async function fillAllFromGoogle(books: NormalizedBook[]): Promise<void> {
-  for (let i = 0; i < books.length; i += 8) {
-    await Promise.all(books.slice(i, i + 8).map(fillFromGoogle))
-  }
-}
-
 // Open Library search results carry no description; the work record does.
 async function fetchOpenLibraryDescription(workKey: string): Promise<string> {
   if (!workKey.startsWith("/works/")) return ""
   try {
     const resp = await fetch(`https://openlibrary.org${workKey}.json`, {
-      cache: "no-store",
+      ...CACHE_A_DAY,
       signal: AbortSignal.timeout(4000),
     })
     if (!resp.ok) return ""
@@ -275,7 +291,7 @@ async function openLibraryDescriptionFor(book: NormalizedBook): Promise<string> 
     url.searchParams.set("author", book.author)
     url.searchParams.set("fields", "key,title,author_name")
     url.searchParams.set("limit", "5")
-    const resp = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(4000) })
+    const resp = await fetch(url.toString(), { ...CACHE_A_DAY, signal: AbortSignal.timeout(4000) })
     if (!resp.ok) return ""
     const data = await resp.json()
     const work = mapOpenLibraryDocs(data?.docs).find(
@@ -309,12 +325,7 @@ function plainText(html: string): string {
 async function googleVolumeDescription(volumeId: string): Promise<string> {
   if (!volumeId || volumeId.startsWith("OL") || volumeId.startsWith("GB-")) return ""
   try {
-    const url = new URL(`https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(volumeId)}`)
-    const apiKey = process.env.GOOGLE_BOOKS_API_KEY
-    if (apiKey) url.searchParams.set("key", apiKey)
-    const resp = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(4000) })
-    if (!resp.ok) return ""
-    const data = await resp.json()
+    const data = await fetchGoogleJson(new URL(`https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(volumeId)}`))
     return typeof data?.volumeInfo?.description === "string" ? plainText(data.volumeInfo.description) : ""
   } catch {
     return ""
@@ -329,7 +340,7 @@ async function appleBooksDescription(book: NormalizedBook): Promise<string> {
     url.searchParams.set("media", "ebook")
     url.searchParams.set("limit", "5")
     url.searchParams.set("country", "US")
-    const resp = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(4000) })
+    const resp = await fetch(url.toString(), { ...CACHE_A_DAY, signal: AbortSignal.timeout(4000) })
     if (!resp.ok) return ""
     const data = await resp.json()
     const results: any[] = Array.isArray(data?.results) ? data.results : []
@@ -366,9 +377,10 @@ function shareDetailsAcrossCopies(books: NormalizedBook[]): void {
   }
 }
 
-// Books that still have no description are looked up one by one: Google's page
-// for the volume, Google by title and author, Open Library, then Apple Books.
-// Stops waiting after budgetMs so the
+// Books that still have no description are looked up one by one: the book's own
+// Open Library or Google page, then Apple Books, then Google and Open Library by
+// title and author. Apple comes before Google's search so Google's daily quota
+// lasts. Stops waiting after budgetMs so the
 // shelf is never held up; whatever was found by then is kept.
 async function fillMissingDescriptions(books: NormalizedBook[], budgetMs: number): Promise<void> {
   shareDetailsAcrossCopies(books)
@@ -380,10 +392,13 @@ async function fillMissingDescriptions(books: NormalizedBook[], budgetMs: number
   const lookups = Array.from(missing.values())
     .slice(0, 15)
     .map(async (book) => {
-      book.description = await googleVolumeDescription(book.id)
-      if (!book.description) await fillFromGoogle(book)
-      if (!book.description) book.description = await openLibraryDescriptionFor(book)
+      const isOpenLibrary = book.id.startsWith("OL/works/")
+      book.description = isOpenLibrary
+        ? plainText(await fetchOpenLibraryDescription(book.id.replace(/^OL/, "")))
+        : await googleVolumeDescription(book.id)
       if (!book.description) book.description = await appleBooksDescription(book)
+      if (!book.description) await fillFromGoogle(book)
+      if (!book.description && !isOpenLibrary) book.description = await openLibraryDescriptionFor(book)
     })
   await Promise.race([Promise.all(lookups), new Promise((resolve) => setTimeout(resolve, budgetMs))])
   shareDetailsAcrossCopies(books)
@@ -456,7 +471,7 @@ export async function GET(request: NextRequest) {
     }
     olUrl.searchParams.set("language", "eng")
 
-    const resp = await fetch(olUrl.toString(), { cache: "no-store" })
+    const resp = await fetch(olUrl.toString(), { ...CACHE_A_DAY, signal: AbortSignal.timeout(10000) })
     if (!resp.ok) {
       return NextResponse.json([], { status: 200 })
     }
@@ -478,14 +493,7 @@ export async function GET(request: NextRequest) {
     // An author's books go newest first so recent ones are not cut off the list;
     // a title search keeps Open Library's best matches at the top
     const books = (author && !title ? newestFirst(olBooks) : olBooks).slice(0, maxResults)
-    await fillAllFromGoogle(books)
-    const missing = books.filter((book) => !book.description)
-    const descriptions = await Promise.all(
-      missing.map((book) => fetchOpenLibraryDescription(book.id.replace(/^OL/, ""))),
-    )
-    missing.forEach((book, i) => {
-      book.description = descriptions[i]
-    })
+    await fillMissingDescriptions(books, 8000)
     return NextResponse.json(books, { status: 200 })
   } catch {
     return NextResponse.json([], { status: 200 })
