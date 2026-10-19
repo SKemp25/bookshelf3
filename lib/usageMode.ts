@@ -12,14 +12,18 @@ export const USAGE_MODES = {
   record: {
     title: "Keep a clear record of my reading",
     includes: null,
-    items: ["Your shelf, authors and wish list", "Read dates, to the day or month", "Your Year in Books"],
+    items: [
+      "Your shelf, authors and wish list",
+      "\"Have I read this?\" in the top bar",
+      "When you read each book, and how you found it",
+      "Your Year in Books",
+    ],
   },
   remember: {
     title: "Help me remember what I've read",
     includes: "Everything in a clear record, plus:",
     items: [
-      "\"Have I read this?\" at the top of Home",
-      "A prompt to add a note when you finish a book",
+      "A short note when you finish a book",
       "Where you left off, and what's next in a series",
     ],
   },
@@ -45,7 +49,7 @@ export const USAGE_PROMPT_DISMISSED_KEY = "bookshelf_usage_prompt_dismissed"
 
 /** The least help a choice must include for each memory tool to appear. */
 export const TOOL_MIN_MODE = {
-  haveIReadThis: "remember",
+  haveIReadThis: "record",
   notePrompt: "remember",
   recentlyViewed: "remember",
   nextInSeries: "remember",

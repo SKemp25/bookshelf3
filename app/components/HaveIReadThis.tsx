@@ -39,7 +39,7 @@ interface HaveIReadThisProps {
 
 /**
  * A header button that opens a search answering one question: is this book marked
- * as read? Shown for "Help me remember" and "Most support".
+ * as read? Shown for every help choice.
  */
 export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontWantBooks, bookRatings, bookNotes, readDates, onEditNote, onShowOnShelf }: HaveIReadThisProps) {
   const { mode } = useUsageMode()
@@ -73,10 +73,13 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
       onClick={() => setOpen(true)}
       aria-label="Have I read this?"
       title="Have I read this?"
-      className="tap-target flex flex-shrink-0 gap-2 p-2 text-white hover:bg-white/20"
+      className="tap-target flex h-auto flex-shrink-0 flex-col items-center gap-0.5 px-2 py-1 text-white hover:bg-white/20 xl:flex-row xl:gap-2"
     >
       <SearchCheck className="h-5 w-5" />
-      <span className="hidden xl:inline">Have I read this?</span>
+      {/* Two short lines on tablets so the words always show without crowding the search box. */}
+      <span className="text-[0.7rem] font-semibold leading-tight xl:text-sm">
+        Have I <br className="xl:hidden" />read this?
+      </span>
     </Button>
     <Dialog open={open} onOpenChange={setOpenAndReset}>
       <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl overflow-y-auto sm:max-w-2xl">

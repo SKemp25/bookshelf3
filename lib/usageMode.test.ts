@@ -16,9 +16,10 @@ describe("how MyBookshelf helps", () => {
   })
 
   it("layers tools: more help includes everything less help has", () => {
-    assert.equal(modeIncludesTool("record", "haveIReadThis"), false)
-    assert.equal(modeIncludesTool("remember", "haveIReadThis"), true)
-    assert.equal(modeIncludesTool("support", "haveIReadThis"), true)
+    assert.equal(modeIncludesTool("record", "haveIReadThis"), true)
+    assert.equal(modeIncludesTool("record", "notePrompt"), false)
+    assert.equal(modeIncludesTool("remember", "notePrompt"), true)
+    assert.equal(modeIncludesTool("support", "notePrompt"), true)
     assert.equal(modeIncludesTool("remember", "readAloud"), false)
     assert.equal(modeIncludesTool("support", "readAloud"), true)
   })
