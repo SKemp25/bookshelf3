@@ -1,11 +1,11 @@
 /**
- * The new look (Step 4): a Daytime or Evening look plus one accent colour.
+ * The new look: a Daytime or Evening look plus one Penguin colour.
  *
- * Daytime is warm paper and dark ink; Evening is deep night blue and warm
- * text. The accent colour (selected buttons, Save, links) carries over when
- * the look changes, with a deeper shade for Daytime and a lighter one for
- * Evening so it stays readable on both. Every accent passes WCAG AA for
- * text and buttons in both looks (see look.test.ts).
+ * Daytime is a light grey page with white cards; Evening is deep night blue
+ * and warm text. The colour (Penguin orange, green or blue) fills the header
+ * band and is used for selected buttons, links and author names. Each colour
+ * has a deeper shade for text on light backgrounds and a lighter one for
+ * Evening, and all of them pass WCAG AA (see look.test.ts).
  *
  * Both choices are remembered in this browser. Only used while the
  * `newLook` feature switch is on.
@@ -14,19 +14,19 @@
 export const LOOKS = {
   daytime: {
     label: "Daytime",
-    hint: "Warm paper and dark ink",
+    hint: "Light grey page and white cards",
     colors: {
-      bg: "#F5F0E6", // page
-      bar: "#ECE4D4", // header and tab bar
-      card: "#FFFDF8",
-      raised: "#F2ECE0", // quiet buttons, hover
-      ink: "#23201B",
-      soft: "#5F584C", // secondary text
-      line: "#DDD3BF",
-      lineSoft: "#ECE4D4",
-      loved: "#8A3415",
-      lovedBg: "#F7E1D3",
-      shadow: "rgba(60, 40, 10, 0.08)",
+      bg: "#F4F4F2", // page
+      bar: "#FFFFFF", // tab bar
+      card: "#FFFFFF",
+      raised: "#EEEEEA", // quiet buttons, hover
+      ink: "#1A1A1A",
+      soft: "#55554F", // secondary text
+      line: "#D6D6D0",
+      lineSoft: "#E4E4E0",
+      loved: "#9E1035",
+      lovedBg: "#FFE1E6",
+      shadow: "rgba(0, 0, 0, 0.06)",
     },
   },
   evening: {
@@ -48,29 +48,53 @@ export const LOOKS = {
   },
 } as const
 
+/**
+ * The Penguin colours. `band` is the header in Daytime (white text on it is
+ * large and bold), `daytime` is the shade for text and buttons on light
+ * backgrounds, `evening` the shade for text on the dark look.
+ */
 export const ACCENTS = {
-  teal: { label: "Teal", daytime: "#1E5B58", daytimeSoft: "#E6F0ED", evening: "#86C9BD", eveningSoft: "#1E3431" },
-  gold: { label: "Gold", daytime: "#7A5A12", daytimeSoft: "#F6EEDC", evening: "#E0B064", eveningSoft: "#3A3020" },
-  orange: { label: "Orange", daytime: "#A3440F", daytimeSoft: "#F8E6DA", evening: "#F2A365", eveningSoft: "#3D2A1E" },
-  blue: { label: "Blue", daytime: "#2B4C8C", daytimeSoft: "#E5EBF6", evening: "#9DB6F0", eveningSoft: "#222D45" },
-  green: { label: "Green", daytime: "#1F5A3A", daytimeSoft: "#E3EFE7", evening: "#93C1AA", eveningSoft: "#1F3328" },
+  orange: {
+    label: "Orange",
+    band: "#F26722",
+    eveningBand: "#B54D19",
+    daytime: "#C2410C",
+    daytimeSoft: "#FFEFE5",
+    evening: "#F2A365",
+    eveningSoft: "#3D2A1E",
+  },
+  green: {
+    label: "Green",
+    band: "#00845A",
+    eveningBand: "#006343",
+    daytime: "#00704C",
+    daytimeSoft: "#DDF3EA",
+    evening: "#93C1AA",
+    eveningSoft: "#1F3328",
+  },
+  blue: {
+    label: "Blue",
+    band: "#0072BB",
+    eveningBand: "#00558C",
+    daytime: "#005A94",
+    daytimeSoft: "#DDEEF9",
+    evening: "#9DB6F0",
+    eveningSoft: "#222D45",
+  },
 } as const
 
 export type Look = keyof typeof LOOKS
 export type Accent = keyof typeof ACCENTS
 
 export const DEFAULT_LOOK: Look = "daytime"
-export const DEFAULT_ACCENT: Accent = "teal"
+export const DEFAULT_ACCENT: Accent = "orange"
 export const LOOK_STORAGE_KEY = "bookshelf_look"
 export const ACCENT_STORAGE_KEY = "bookshelf_accent"
 /** The old colour theme setting; its colour becomes the starting accent. */
 export const OLD_THEME_STORAGE_KEY = "bookshelf_color_theme"
 
-/**
- * Old colour themes that have a matching accent. Others start on the default.
- * Orange is left out: it was the old default, saved for everyone who never chose.
- */
-const ACCENT_FROM_OLD_THEME: Record<string, Accent> = { blue: "blue", green: "green", teal: "teal" }
+/** Old colour themes that have a matching colour. Others start on orange. */
+const ACCENT_FROM_OLD_THEME: Record<string, Accent> = { blue: "blue", green: "green", orange: "orange" }
 
 export function normalizeLook(value: unknown): Look {
   return typeof value === "string" && value in LOOKS ? (value as Look) : DEFAULT_LOOK
@@ -125,6 +149,8 @@ export function lookVariables(look: Look, accent: Accent): Record<string, string
     "--nl-accent": accentHex,
     "--nl-accent-soft": look === "daytime" ? a.daytimeSoft : a.eveningSoft,
     "--nl-on-accent": onAccent,
+    "--nl-band": look === "daytime" ? a.band : a.eveningBand,
+    "--nl-on-band": "#FFFFFF",
     // Older components follow the accent through this variable
     "--theme-accent": accentHex,
     // shadcn/ui colours, so dialogs, menus and inputs follow the look
@@ -178,7 +204,7 @@ export function applyLook(look: Look, accent: Accent): void {
   root.dataset.accent = accent
   for (const [name, value] of Object.entries(lookVariables(look, accent))) root.style.setProperty(name, value)
   const meta = document.querySelector('meta[name="theme-color"]')
-  meta?.setAttribute("content", LOOKS[look].colors.bar)
+  meta?.setAttribute("content", look === "daytime" ? ACCENTS[accent].band : ACCENTS[accent].eveningBand)
   window.dispatchEvent(new CustomEvent(LOOK_CHANGED_EVENT, { detail: { look, accent } }))
   try {
     localStorage.setItem(LOOK_STORAGE_KEY, look)

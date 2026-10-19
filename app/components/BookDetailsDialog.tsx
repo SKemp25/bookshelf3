@@ -34,13 +34,15 @@ interface BookDetailsDialogProps {
   showNote: boolean
   onSave: (bookId: string, details: BookDetails) => void
   onClose: () => void
+  /** New look: "Not read after all" lives here instead of on the card. */
+  onNotRead?: (target: DetailsTarget) => void
 }
 
 // Selected state comes from aria-checked via .theme-choice in globals.css.
 const pill = "theme-choice min-h-[2.75rem] rounded-xl border-2 px-3 py-2 text-left text-base font-semibold text-gray-900"
 
 /** "When did you finish it?", how it was, and an optional short note. Opens when a book is marked as read. */
-export default function BookDetailsDialog({ target, existing, showNote, onSave, onClose }: BookDetailsDialogProps) {
+export default function BookDetailsDialog({ target, existing, showNote, onSave, onClose, onNotRead }: BookDetailsDialogProps) {
   const now = new Date()
   const [choice, setChoice] = useState<ReadDateChoice | null>(null)
   const [month, setMonth] = useState<number | undefined>()
@@ -161,6 +163,11 @@ export default function BookDetailsDialog({ target, existing, showNote, onSave, 
         )}
 
         <div className="flex flex-wrap justify-end gap-2 pt-1">
+          {onNotRead && target?.reason === "edit" && (
+            <Button variant="ghost" className="tap-target mr-auto text-base font-bold text-gray-700" onClick={() => onNotRead(target)}>
+              Not read after all
+            </Button>
+          )}
           <Button variant="ghost" className="tap-target text-base font-bold text-gray-700" onClick={onClose}>
             {target?.reason === "finished" ? "Skip for now" : "Cancel"}
           </Button>

@@ -2,7 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
-import { Atkinson_Hyperlegible, Literata } from "next/font/google"
+import { Figtree } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
 import ErrorBoundary from "./components/ErrorBoundary"
@@ -10,9 +10,8 @@ import { isFeatureOn } from "@/lib/features"
 import { textSizeBootScript } from "@/lib/textSize"
 import { lookBootScript } from "@/lib/look"
 
-// Fonts for the new look: a book typeface for titles, a very legible one for everything else
-const literata = Literata({ subsets: ["latin"], weight: ["400", "600"], style: ["normal", "italic"], variable: "--nl-serif", display: "swap" })
-const atkinson = Atkinson_Hyperlegible({ subsets: ["latin"], weight: ["400", "700"], variable: "--nl-sans", display: "swap" })
+// Font for the new look: Figtree, clean and modern, for titles and text alike
+const figtree = Figtree({ subsets: ["latin"], weight: ["400", "500", "600", "700"], style: ["normal", "italic"], variable: "--nl-sans", display: "swap" })
 
 export const metadata: Metadata = {
   title: "My Bookcase - Personal Reading Tracker",
@@ -36,7 +35,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={isFeatureOn("newLook") ? `antialiased ${literata.variable} ${atkinson.variable}` : "antialiased"}
+      className={isFeatureOn("newLook") ? `antialiased ${figtree.variable}` : "antialiased"}
       suppressHydrationWarning
     >
       <head>
