@@ -178,7 +178,7 @@ export async function fetchAuthorBooksWithCache(authorName: string, clearCache: 
 
   console.log(`Cache miss for author: ${authorName}, fetching via /api/search (server-side fallback enabled)`)
 
-  const AUTHOR_SEARCH_TIMEOUT_MS = 15_000
+  const AUTHOR_SEARCH_TIMEOUT_MS = 30_000
 
   try {
     const url = `/api/search?author=${encodeURIComponent(authorName)}&maxResults=40&lang=en`
