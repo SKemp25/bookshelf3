@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import type { Book } from "@/lib/types"
 import { answerFor, findOnShelf, type ShelfStatus } from "@/lib/haveIRead"
 import { isToolOn } from "@/lib/usageMode"
+import { formatReadDate, type ReadDate } from "@/lib/readDates"
 import { useUsageMode } from "./useUsageMode"
 
 type Rating = "loved" | "liked" | "didnt-like"
@@ -31,6 +32,7 @@ interface HaveIReadThisProps {
   dontWantBooks: Set<string>
   bookRatings: Map<string, Rating>
   bookNotes: Map<string, string>
+  readDates: Map<string, ReadDate>
   onEditNote: (bookId: string, title: string, author: string) => void
   onShowOnShelf: (title: string) => void
 }
@@ -39,7 +41,7 @@ interface HaveIReadThisProps {
  * A header button that opens a search answering one question: is this book marked
  * as read? Shown for "Help me remember" and "Most support".
  */
-export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontWantBooks, bookRatings, bookNotes, onEditNote, onShowOnShelf }: HaveIReadThisProps) {
+export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontWantBooks, bookRatings, bookNotes, readDates, onEditNote, onShowOnShelf }: HaveIReadThisProps) {
   const { mode } = useUsageMode()
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
@@ -61,6 +63,7 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
   const typed = query.trim().length > 0
   const rating = best ? bookRatings.get(best.key) : undefined
   const note = best ? bookNotes.get(best.key) : undefined
+  const date = best ? readDates.get(best.key) : undefined
 
   return (
     <>
@@ -126,6 +129,11 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
                 <span className="font-bold">{best.book.title}</span> by {best.book.author}
                 {best.book.publishedDate ? `, ${best.book.publishedDate.slice(0, 4)}` : ""}.
               </p>
+              {date && (
+                <p className="mt-1 text-lg text-gray-800">
+                  {"before" in date ? `You read it before ${date.before}.` : `You finished it in ${formatReadDate(date)}.`}
+                </p>
+              )}
               {rating && <p className="mt-1 text-lg text-gray-800">{RATING_TEXT[rating]}</p>}
               {note && (
                 <p className="mt-3 whitespace-pre-line border-l-4 theme-bar pl-3 text-lg italic text-gray-900">{note}</p>
@@ -141,7 +149,7 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
                 >
                   Show on my shelf
                 </Button>
-                {(note || best.status === "read") && (
+                {best.status === "read" && (
                   <Button
                     variant="outline"
                     className="tap-target border-2 border-gray-300 text-base font-bold text-gray-900"
@@ -150,7 +158,7 @@ export default function HaveIReadThis({ books, readBooks, wantToReadBooks, dontW
                       setOpenAndReset(false)
                     }}
                   >
-                    {note ? "Edit note" : "Add a note"}
+                    {note || date || rating ? "Edit details" : "Add details"}
                   </Button>
                 )}
               </div>

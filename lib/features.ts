@@ -15,7 +15,7 @@
 export const features = {
   // Step 1: calm foundations and read dates
   largerButtonsAndText: true,
-  readDates: false,
+  readDates: true,
   undoOnCards: false,
 
   // How would you like MyBookshelf to help? (lib/usageMode.ts)
